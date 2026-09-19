@@ -93,6 +93,15 @@
     bigboxCount(){ return parseInt(this.config.bigbox_count||"20"); }
     slotPerBigbox(){ return parseInt(this.config.slot_per_bigbox||"24"); }
 
+    /** 平面棋盘全部格位（标签与 index.html drawBoard 一致：序号-列字母） */
+    boardLocations(kind="small"){
+      const n=parseInt(this.config[kind+"_box"]||"20");
+      const grid=parseInt(this.config[kind+"_box_grid"]||(kind==="small"?"5":"4"));
+      const out=[];
+      for(let i=1;i<=n;i++){ const col=(i%grid)||grid; out.push(i+"-"+String.fromCharCode(64+col)); }
+      return out;
+    }
+
     occupiedLocations(){
       const s=new Set();
       for(const k in this.items){ const it=this.items[k]; if(it.location && it.status===ST_IN) s.add(it.location); }
@@ -229,10 +238,22 @@
         const boxType=form.box_type||"small";
         locs=this.allocConsecutiveSlots(parseInt(form.box_no), n, boxType);
         if(locs.length<n) throw new Error(`所选盒子剩余连续空位不足 ${n} 个`);
+      }else if(form.location){
+        // 棋盘多选：逗号分隔的库位逐瓶分配（每瓶不同位置）
+        const sel=[...new Set(String(form.location).split(",").map(s=>s.trim()).filter(Boolean))];
+        const occ=this.occupiedLocations();
+        for(const l of sel) if(occ.has(l)) throw new Error(`库位 ${l} 已被占用，请重新点选空闲格位`);
+        if(sel.length>n) throw new Error(`所选库位 ${sel.length} 个，超过入库数量 ${n} 瓶`);
+        locs=sel.slice();
+        if(locs.length<n){
+          // 未选满：用同棋盘空闲格补齐
+          const free=this.boardLocations("small").filter(l=>!occ.has(l)&&!locs.includes(l));
+          while(locs.length<n&&free.length) locs.push(free.shift());
+        }
       }
       for(let i=0;i<n;i++){
         const f={...form, exp_date:dateStr(exp)};
-        const loc = locs.length ? locs[i] : form.location;
+        const loc = locs.length ? locs[i] : "";
         const bid=this.receive(f, {commit:false, note:`批量入库第${i+1}瓶`, location:loc});
         bids.push(bid);
       }

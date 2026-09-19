@@ -144,9 +144,11 @@
       }
 
       case "locations": {
+        // 字段与 server.py /api/locations 契约一致
+        const pick = (k, d) => parseInt(s.config[k] || String(d));
         return {
-          boxes: s.boxCount(), slot_per_box: s.slotPerBox(),
-          bigboxes: s.bigboxCount(), slot_per_bigbox: s.slotPerBigbox(),
+          big_box: pick("big_box", 20), big_box_grid: pick("big_box_grid", 4),
+          small_box: pick("small_box", 20), small_box_grid: pick("small_box_grid", 5),
           occupied: [...s.occupiedLocations()]
         };
       }
