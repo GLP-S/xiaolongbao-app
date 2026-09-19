@@ -69,7 +69,7 @@
         const q = (opt._q || "").toLowerCase();
         const status = opt._status || "";
         let list = Object.values(s.items);
-        if (q) list = list.filter(i => (i.bottle_id + i.name + i.std_id + i.conc + i.batch).toLowerCase().includes(q));
+        if (q) list = list.filter(i => (i.bottle_id + i.name + i.std_id + i.conc + i.unit + i.batch + i.product_code + i.location).toLowerCase().includes(q));
         if (status && status !== "全部") list = list.filter(i => i.status === status);
         return list.sort((a, b) => (b.bottle_id || "").localeCompare(a.bottle_id || ""));
       }
