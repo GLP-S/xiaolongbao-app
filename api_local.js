@@ -81,8 +81,15 @@
       }
 
       case "receive": {
-        const bid = s.receive(body.form || body, body);
-        return { bottle_id: bid };
+        const form = body.form || body;
+        const n = parseInt(body.qty || form.qty || "1");
+        const pcode = s.productCodeFor(form.std_id, form.conc, form.unit, form.batch, form.name);
+        if (n > 1) {
+          const bottle_ids = s.receiveBatch(form, n);
+          return { bottle_ids, product_code: pcode };
+        }
+        const bid = s.receive(form);
+        return { bottle_ids: [bid], bottle_id: bid, product_code: pcode };
       }
 
       case "scan": {
