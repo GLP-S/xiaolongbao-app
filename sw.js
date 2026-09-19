@@ -3,7 +3,7 @@
 // ② API 读取(GET)：NetworkFirst（在线取最新→压缩→加密写缓存，离线/超时回退并解密→解压）
 // ③ 本地缓存：JSON/文本类先 gzip 压缩再 AES-GCM 256 加密；图片等已压缩格式只加密
 // ④ 原生 App 内按用户配置的服务器地址，把 /api 请求重写到真实服务端
-const SHELL_CACHE = "xlb-shell-v7";
+const SHELL_CACHE = "xlb-shell-v8";
 const DATA_CACHE = "xlb-data-v4";
 const ALL_CACHES = [SHELL_CACHE, DATA_CACHE];
 const ASSETS = [
