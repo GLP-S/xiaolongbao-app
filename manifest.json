@@ -1,0 +1,16 @@
+{
+  "name": "小笼包 · 标准溶液管理系统",
+  "short_name": "小笼包",
+  "description": "标准溶液出入库管理平板端，支持扫码、标签打印、盘点",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f7f5f2",
+  "theme_color": "#ff6b9d",
+  "lang": "zh-CN",
+  "icons": [
+    {"src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable"},
+    {"src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable"}
+  ]
+}

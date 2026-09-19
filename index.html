@@ -1,0 +1,961 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="小笼包">
+<meta name="theme-color" content="#ff6b9d">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>小笼包 · 标准溶液管理</title>
+<!-- 单机版核心模块：业务逻辑 + IndexedDB + 标签渲染 + 本地 API 适配 -->
+<script src="store.js"></script>
+<script src="db.js"></script>
+<script src="label.js"></script>
+<script src="api_local.js"></script>
+<script src="bluetooth_print.js"></script>
+<style>
+:root{
+  --pink:#ff6b9d;--blue:#4dabf7;--green:#51cf66;--purple:#cc5de8;--yellow:#ffd43b;
+  --bg:#f7f5f2;--card:#fff;--text:#333;--muted:#999;--border:#eee;
+  --shadow:0 4px 18px rgba(0,0,0,.08);
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0;height:100%;font-family:-apple-system,"Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);font-size:15px}
+#app{display:flex;flex-direction:column;height:100vh;height:100dvh;max-width:1000px;margin:0 auto;background:var(--bg)}
+/* 顶栏 */
+.bar{display:flex;align-items:center;padding:10px 14px;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,.05);z-index:10;gap:8px;flex-shrink:0}
+.bar .logo{width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,var(--pink),var(--purple));display:flex;align-items:center;justify-content:center;color:#fff;font-weight:bold;font-size:18px;flex-shrink:0}
+.bar .title{font-size:16px;font-weight:600;flex:1}
+.bar .user{font-size:13px;color:var(--muted);padding:4px 10px;background:#f0f0f0;border-radius:12px}
+.bar button{border:none;background:var(--pink);color:#fff;padding:7px 14px;border-radius:8px;font-size:13px;cursor:pointer}
+.net-dot{display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);background:#f3f4f6;padding:4px 10px;border-radius:20px}
+.net-dot .nd{width:8px;height:8px;border-radius:50%;display:inline-block}
+.net-dot.online .nd{background:#2f9e44;box-shadow:0 0 4px rgba(47,158,68,.6)}
+.net-dot.offline .nd{background:#e03131;box-shadow:0 0 4px rgba(224,49,49,.6)}
+.offline-entry{font-size:13px;color:var(--muted);margin-top:18px}
+.offline-entry a{color:var(--pink);text-decoration:underline}
+.crumb{font-size:12px;color:var(--muted);padding:6px 16px;background:#fafafa;flex-shrink:0;border-bottom:1px solid var(--border)}
+.crumb span{cursor:pointer}
+.crumb span:hover{color:var(--pink)}
+/* 主体可滚动 */
+.main{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:14px}
+/* 登录页 */
+.login-wrap{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px}
+.login-wrap .logo-big{width:96px;height:96px;border-radius:24px;background:linear-gradient(135deg,var(--pink),var(--purple));display:flex;align-items:center;justify-content:center;color:#fff;font-size:48px;font-weight:bold;box-shadow:var(--shadow);margin-bottom:16px}
+.login-wrap h1{font-size:24px;margin:8px 0 4px}
+.login-wrap .sub{color:var(--muted);font-size:13px;margin-bottom:28px}
+.login-wrap input{width:100%;max-width:320px;padding:12px 14px;border:1px solid var(--border);border-radius:10px;font-size:15px;margin-bottom:12px;background:#fff}
+.login-wrap button{width:100%;max-width:320px;padding:13px;background:linear-gradient(135deg,var(--pink),var(--purple));color:#fff;border:none;border-radius:10px;font-size:16px;font-weight:600;cursor:pointer}
+.login-wrap .err{color:#e03131;font-size:13px;margin-bottom:10px;min-height:18px}
+/* 主菜单卡片 */
+.menu-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.card{background:var(--card);border-radius:16px;padding:24px 16px;text-align:center;box-shadow:var(--shadow);cursor:pointer;transition:transform .12s;border:3px solid transparent}
+.card:active{transform:scale(.96)}
+.card .ic{width:56px;height:56px;border-radius:50%;margin:0 auto 12px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:26px;font-weight:bold}
+.card h3{margin:4px 0;font-size:17px}
+.card p{margin:0;font-size:12px;color:var(--muted)}
+.card.pink .ic{background:var(--pink)}
+.card.blue .ic{background:var(--blue)}
+.card.green .ic{background:var(--green)}
+.card.purple .ic{background:var(--purple)}
+/* 分菜单长条 */
+.sub-list{display:flex;flex-direction:column;gap:12px;max-width:600px;margin:0 auto}
+.sub-btn{display:flex;align-items:center;gap:14px;background:#fff;border-radius:14px;padding:16px 18px;box-shadow:var(--shadow);cursor:pointer;transition:transform .12s;border:3px solid transparent}
+.sub-btn:active{transform:scale(.98)}
+.sub-btn .ic{width:48px;height:48px;border-radius:12px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px;flex-shrink:0}
+.sub-btn .t{font-size:16px;font-weight:600}
+.sub-btn .d{font-size:12px;color:var(--muted)}
+.sub-btn .arr{margin-left:auto;color:var(--muted);font-size:20px}
+/* 按钮 */
+.btn{border:none;padding:10px 18px;border-radius:10px;font-size:14px;cursor:pointer;font-weight:500}
+.btn-primary{background:linear-gradient(135deg,var(--pink),var(--purple));color:#fff}
+.btn-green{background:var(--green);color:#fff}
+.btn-blue{background:var(--blue);color:#fff}
+.btn-warn{background:var(--yellow);color:#333}
+.btn-gray{background:#eee;color:#333}
+.btn-danger{background:#e03131;color:#fff}
+/* 表单 */
+.form-row{display:flex;align-items:center;margin-bottom:10px;gap:8px}
+.form-row label{width:100px;font-size:14px;color:#555;flex-shrink:0}
+.form-row input,.form-row select,.form-row textarea{flex:1;padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:#fff}
+.form-row textarea{resize:vertical;min-height:44px}
+/* 表格 */
+.tbl{width:100%;border-collapse:collapse;background:#fff;border-radius:10px;overflow:hidden;font-size:13px}
+.tbl th,.tbl td{padding:8px 6px;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap}
+.tbl th{background:#f5f5f5;font-weight:600}
+.tbl-wrap{overflow-x:auto}
+/* 弹窗 */
+.mask{position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:100;padding:16px}
+.modal{background:#fff;border-radius:16px;padding:20px;max-width:90vw;width:480px;max-height:85vh;overflow-y:auto}
+.modal h3{margin:0 0 14px}
+.modal .row{display:flex;gap:8px;margin-top:14px;justify-content:flex-end}
+/* 扫码框 */
+.scan-box{display:flex;gap:8px;margin-bottom:14px}
+.scan-box input{flex:1;padding:12px;border:2px solid var(--pink);border-radius:10px;font-size:15px}
+.scan-box button{padding:12px 18px}
+/* 标签 */
+.tag{display:inline-block;padding:2px 8px;border-radius:8px;font-size:12px}
+.tag-in{background:#d3f9d8;color:#2b8a3e}
+.tag-out{background:#ffe3e3;color:#c92a2a}
+.tag-used{background:#fff3bf;color:#e67700}
+.tag-discard{background:#dee2e6;color:#868e96}
+/* 库位棋盘 */
+.board{display:grid;gap:4px;margin:10px 0}
+.cell{aspect-ratio:1;background:#d3f9d8;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:11px;color:#2b8a3e;cursor:pointer;font-weight:600;border:2px solid transparent}
+.cell.occ{background:#adb5bd;color:#fff;cursor:not-allowed}
+.cell.sel{background:var(--pink);color:#fff;border-color:#c2255c}
+/* toast */
+.toast{position:fixed;top:20px;left:50%;transform:translateX(-50%);background:#333;color:#fff;padding:10px 20px;border-radius:8px;z-index:999;font-size:14px}
+/* 平板横屏 */
+@media(min-width:760px){
+  .menu-grid{grid-template-columns:1fr 1fr 1fr 1fr}
+}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+const API="";
+const CATS=[
+  {key:"inout",name:"出入库操作",color:"pink",icon:"入",desc:"扫码登记/归还",funcs:[
+    {key:"scan",name:"扫码出入库",desc:"扫码完成取用、出库、归还"},
+    {key:"receive",name:"入库登记",desc:"登记新溶液，自动生成瓶码并打印"},
+  ]},
+  {key:"query",name:"查询统计",color:"blue",icon:"查",desc:"库存/流水",funcs:[
+    {key:"stock",name:"库存查询",desc:"多条件查库存，补打标签/作废"},
+    {key:"logs",name:"流水台账",desc:"查询全部出入库流水并导出"},
+  ]},
+  {key:"check",name:"盘点管理",color:"green",icon:"盘",desc:"扫码盘点",funcs:[
+    {key:"stocktake",name:"扫码盘点",desc:"扫码盘库，自动生成差异报告"},
+  ]},
+  {key:"sys",name:"系统设置",color:"purple",icon:"置",desc:"参数配置",funcs:[
+    {key:"cfg",name:"参数设置",desc:"账号、瓶号规则、标签、库位等"},
+  ]},
+];
+let state={user:null,page:"login",subCat:null,func:null,token:false};
+let $app;
+function $(sel){return document.querySelector(sel)}
+function toast(msg){const t=document.createElement("div");t.className="toast";t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),1800)}
+async function api(path,opt={}){
+  // 单机模式：所有接口走本地 Store（IndexedDB），彻底脱离电脑
+  if(window.XLBLocalApi){
+    // 提取 query 参数传给本地适配层
+    const qIdx=path.indexOf("?");
+    let p=path, params={};
+    if(qIdx>=0){
+      p=path.slice(0,qIdx);
+      new URLSearchParams(path.slice(qIdx+1)).forEach((v,k)=>params["_"+k]=v);
+    }
+    try{
+      return await window.XLBLocalApi.localApi(p,{...opt,...params});
+    }catch(e){
+      // 本地不支持的接口（如导出 Excel）回退到远程
+      if(serverBase) return await _remoteApi(path,opt);
+      throw e;
+    }
+  }
+  return await _remoteApi(path,opt);
+}
+async function _remoteApi(path,opt={}){
+  const r=await fetch(apiBase()+path,{headers:{"Content-Type":"application/json"},...opt});
+  const ct=r.headers.get("content-type")||"";
+  if(ct.includes("json")){const j=await r.json();if(!r.ok)throw new Error(j.msg||j.error||"请求失败");return j}
+  return r
+}
+/* ---------- 服务端地址（原生 App 专用） ----------
+   浏览器同源访问 http://电脑IP:8765 时地址为空、用相对路径；
+   Capacitor 原生包页面在 https://localhost，必须由用户配置电脑服务端地址。
+   地址存于与 SW 共享的 IndexedDB(kv)，SW 据此把 /api 请求重写到真实服务端。 */
+let serverBase="";
+const SRV_KEY="server_base";
+const isNative=!!(window.Capacitor&&window.Capacitor.isNativePlatform&&window.Capacitor.isNativePlatform());
+function apiBase(){return serverBase||""}
+function normalizeServerInput(v){
+  let s=(v||"").trim().replace(/\/+$/,"");
+  if(!s)return "";
+  if(!/^https?:\/\//i.test(s))s="http://"+s;
+  return s;
+}
+async function loadServerBase(){
+  try{
+    const db=await secOpenDB();
+    const v=await secIDB(db,"readonly",os=>os.get(SRV_KEY));
+    serverBase=typeof v==="string"?v:"";
+  }catch(e){serverBase=""}
+}
+async function saveServerBase(v){
+  serverBase=normalizeServerInput(v);
+  const db=await secOpenDB();
+  await secIDB(db,"readwrite",os=>os.put(serverBase,SRV_KEY));
+  if(navigator.serviceWorker&&navigator.serviceWorker.controller){
+    navigator.serviceWorker.controller.postMessage({type:"SET_BASE",base:serverBase});
+  }
+}
+async function testServerBase(v){
+  const base=normalizeServerInput(v);
+  if(!base)throw new Error("请填写服务器地址");
+  const r=await fetch(base+"/api/info");
+  if(!r.ok)throw new Error("连接失败（HTTP "+r.status+"）");
+  return await r.json();
+}
+/* ---------- 本地数据加密层 ----------
+   AES-GCM 256（WebCrypto）；密钥生成后不可导出(extractable:false)，
+   以 CryptoKey 形式存入 IndexedDB，页面与 Service Worker 共用。
+   密文格式：
+     E1$<base64(IV)>.<base64(密文)>                 明文直接加密
+     E2$<base64(IV)>.<base64(密文)>                 gzip 压缩后再加密 */
+const SEC_PREFIX="E1$", SEC_PREFIX_C="E2$", SEC_DB="xlb-sec-v1", SEC_STORE="kv", SEC_KEYID="aesgcm256-v1";
+const cmpSupported=typeof CompressionStream!=="undefined"&&typeof DecompressionStream!=="undefined";
+function secOpenDB(){
+  return new Promise((res,rej)=>{
+    const r=indexedDB.open(SEC_DB,1);
+    r.onupgradeneeded=()=>r.result.createObjectStore(SEC_STORE);
+    r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error);
+  });
+}
+function secIDB(db,mode,fn){
+  return new Promise((res,rej)=>{
+    const tx=db.transaction(SEC_STORE,mode),os=tx.objectStore(SEC_STORE);
+    const rq=fn(os);rq.onsuccess=()=>res(rq.result);rq.onerror=()=>rej(rq.error);
+  });
+}
+async function secGetKey(){
+  const db=await secOpenDB();
+  const existed=await secIDB(db,"readonly",os=>os.get(SEC_KEYID));
+  if(existed)return existed;
+  const key=await crypto.subtle.generateKey({name:"AES-GCM",length:256},false,["encrypt","decrypt"]);
+  await secIDB(db,"readwrite",os=>os.put(key,SEC_KEYID));
+  return key;
+}
+function b64Encode(u8){
+  let bin="",CH=0x8000;
+  for(let i=0;i<u8.length;i+=CH){bin+=String.fromCharCode.apply(null,u8.subarray(i,i+CH))}
+  return btoa(bin);
+}
+function b64Decode(s){
+  const bin=atob(s),out=new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++)out[i]=bin.charCodeAt(i);
+  return out;
+}
+async function gzipBytes(bytes){
+  if(!cmpSupported)return bytes;
+  const s=new Blob([bytes]).stream().pipeThrough(new CompressionStream("gzip"));
+  return new Uint8Array(await new Response(s).arrayBuffer());
+}
+async function gunzipBytes(bytes){
+  // gzip magic 1f 8b；无标记则视为未压缩（老环境 raw 回退数据）
+  if(!cmpSupported||bytes[0]!==0x1f||bytes[1]!==0x8b)return bytes;
+  const s=new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"));
+  return new Uint8Array(await new Response(s).arrayBuffer());
+}
+async function encToString(data,compress){
+  const key=await secGetKey();
+  const iv=crypto.getRandomValues(new Uint8Array(12));
+  let payload=new TextEncoder().encode(typeof data==="string"?data:JSON.stringify(data));
+  let prefix=SEC_PREFIX;
+  if(compress&&cmpSupported){const z=await gzipBytes(payload);if(z.length<payload.length){payload=z;prefix=SEC_PREFIX_C}}
+  const ct=await crypto.subtle.encrypt({name:"AES-GCM",iv},key,payload);
+  return prefix+b64Encode(iv)+"."+b64Encode(new Uint8Array(ct));
+}
+async function decFromString(str){
+  const compressed=str.startsWith(SEC_PREFIX_C);
+  const rawPrefix=compressed?SEC_PREFIX_C:SEC_PREFIX;
+  const body=str.slice(rawPrefix.length),dot=body.indexOf(".");
+  const iv=b64Decode(body.slice(0,dot));
+  const ct=b64Decode(body.slice(dot+1));
+  const key=await secGetKey();
+  let pt=await crypto.subtle.decrypt({name:"AES-GCM",iv},key,ct);
+  if(compressed)pt=await gunzipBytes(new Uint8Array(pt));
+  return new TextDecoder().decode(pt);
+}
+async function encJSON(data){return await encToString(JSON.stringify(data),true)}
+async function decJSON(str){return JSON.parse(await decFromString(str))}
+function isCipher(str){return typeof str==="string"&&(str.startsWith(SEC_PREFIX)||str.startsWith(SEC_PREFIX_C))}
+/* ---------- 离线缓存基础设施 ---------- */
+const SESS_KEY="xlb_session", QUEUE_KEY="xlb_offline_queue";
+let queueMem=[],sessMem=null;
+// 启动时加载并解密（自动迁移历史明文）
+async function initSecureStorage(){
+  // 会话
+  const rawS=localStorage.getItem(SESS_KEY);
+  if(rawS){
+    try{sessMem=isCipher(rawS)?await decFromString(rawS):rawS}
+    catch(e){sessMem=null}
+    if(!isCipher(rawS)&&sessMem)localStorage.setItem(SESS_KEY,await encToString(sessMem));
+  }
+  // 队列（明文 / 旧 E1$ 统一迁移为 E2$ 压缩密文）
+  const rawQ=localStorage.getItem(QUEUE_KEY);
+  if(rawQ){
+    try{queueMem=isCipher(rawQ)?await decJSON(rawQ):JSON.parse(rawQ)}
+    catch(e){queueMem=[]}
+    if(!rawQ.startsWith(SEC_PREFIX_C))localStorage.setItem(QUEUE_KEY,await encJSON(queueMem));
+  }
+}
+// 写操作统一入口：本地模式始终直连本地 Store；联网模式在线直连，离线入队
+async function apiWrite(path,body,label){
+  if(window.XLBLocalApi) return await api(path,{method:"POST",body:JSON.stringify(body)});
+  if(navigator.onLine)return await api(path,{method:"POST",body:JSON.stringify(body)});
+  const q=getQueue();q.push({path,body,label,ts:Date.now(),fails:0});await saveQueue(q);
+  toast("离线已记录："+label+"，联网后自动提交");
+  updateNetUI();
+  return {offline:true}
+}
+function getQueue(){return queueMem}
+async function saveQueue(q){queueMem=q;localStorage.setItem(QUEUE_KEY,await encJSON(q))}
+async function saveSession(u){sessMem=u;localStorage.setItem(SESS_KEY,await encToString(u))}
+function clearSession(){sessMem=null;localStorage.removeItem(SESS_KEY)}
+let flushing=false;
+async function flushQueue(){
+  if(flushing||!navigator.onLine)return;
+  const q=getQueue();if(!q.length){updateNetUI();return}
+  flushing=true;
+  let progress=0;
+  while(q.length){
+    const op=q[0];
+    try{
+      await api(op.path,{method:"POST",body:JSON.stringify(op.body)});
+      q.shift();await saveQueue(q);progress++;
+    }catch(e){
+      op.fails=(op.fails||0)+1;
+      const failed=q.shift();
+      if(op.fails<=3){q.push(failed)}else{toast("多次失败，已保留待手动处理："+op.label)}
+      await saveQueue(q);
+      if(q.length&&q.every(o=>(o.fails||0)>=4))break;
+    }
+  }
+  if(progress)toast("已同步 "+progress+" 条离线操作");
+  flushing=false;updateNetUI();
+}
+function updateNetUI(){
+  const dot=$("#netdot");if(!dot)return;
+  const n=getQueue().length;
+  dot.className="net-dot "+(navigator.onLine?"online":"offline");
+  dot.title=navigator.onLine?(n?"在线 · 待同步 "+n+" 条":"在线 · 数据已同步"):"离线模式 · 待同步 "+n+" 条";
+  dot.innerHTML=navigator.onLine
+    ?`<span class="nd"></span>${n?`待同步 ${n} 条`:"在线"}`
+    :`<span class="nd"></span>离线${n?` · ${n} 条待同步`:""}`;
+}
+window.addEventListener("online",()=>{updateNetUI();toast("网络已恢复，正在同步…");flushQueue()});
+window.addEventListener("offline",()=>{updateNetUI();toast("已进入离线模式，可浏览缓存并记录操作")});
+function setPage(p){state.page=p;render()}
+function catOf(k){return CATS.find(c=>c.funcs.some(f=>f.key===k))}
+function crumb(){
+  if(state.page==="home")return "首页";
+  if(state.page==="sub")return `首页 › ${CATS.find(c=>c.key===state.subCat).name}`;
+  if(state.page==="func"){
+    const c=catOf(state.func);return `首页 › ${c.name} › ${c.funcs.find(f=>f.key===state.func).name}`
+  }
+  return ""
+}
+/* ---------- 渲染入口 ---------- */
+function render(){
+  $app.innerHTML="";
+  if(state.page==="connect"){renderConnect();return}
+  if(state.page==="login"){renderLogin();return}
+  // 顶栏
+  const bar=document.createElement("div");bar.className="bar";
+  bar.innerHTML=`<div class="logo">小</div><div class="title">小笼包</div>
+    <div class="net-dot" id="netdot"></div>
+    <div class="user">${state.user}</div><button id="logout">退出</button>`;
+  $app.appendChild(bar);
+  $("#logout").onclick=()=>{state.user=null;state.token=false;clearSession();setPage("login")};
+  updateNetUI();
+  // 面包屑
+  const cr=document.createElement("div");cr.className="crumb";
+  const parts=crumb().split("›");
+  cr.innerHTML=parts.map((p,i)=>{
+    const isLast=i===parts.length-1;
+    return isLast?`<span>${p.trim()}</span>`:`<span onclick="navCrumb(${i})">${p.trim()}</span> › `
+  }).join("");
+  $app.appendChild(cr);
+  const main=document.createElement("div");main.className="main";$app.appendChild(main);
+  if(state.page==="home")renderHome(main);
+  else if(state.page==="sub")renderSub(main);
+  else if(state.page==="func")renderFunc(main);
+}
+window.navCrumb=function(i){
+  if(state.page==="sub"||(state.page==="func"&&i===0))setPage("home");
+  else if(state.page==="func"&&i===1)setPage("sub");
+}
+/* ---------- 登录 ---------- */
+function renderConnect(){
+  const w=document.createElement("div");w.className="login-wrap";w.style.height="100%";
+  w.innerHTML=`<div class="logo-big">小</div><h1>连接服务器</h1>
+    <div class="sub">请输入电脑端小笼包服务地址</div>
+    <div class="err" id="cerr"></div>
+    <input id="csrv" placeholder="192.168.0.107:8765" autocomplete="off">
+    <button id="cbtn">测试并连接</button>
+    <div style="color:#999;font-size:12px;margin-top:12px;line-height:1.7">
+      1. 在电脑上启动「启动小笼包.bat」<br>
+      2. 平板与电脑连接同一 WiFi<br>
+      3. 填写电脑 IP 地址与端口（电脑端显示的访问地址）</div>`;
+  $app.appendChild(w);
+  $("#csrv").focus();
+  const doConnect=async()=>{
+    const v=$("#csrv").value;
+    try{
+      const info=await testServerBase(v);
+      await saveServerBase(v);
+      toast("连接成功："+(info.app_name||"")+" v"+info.version);
+      setPage("login");
+    }catch(e){$("#cerr").textContent=e.message}
+  };
+  $("#cbtn").onclick=doConnect;
+  $("#csrv").addEventListener("keydown",e=>{if(e.key==="Enter")doConnect()});
+}
+function renderLogin(){
+  const saved=sessMem;
+  const w=document.createElement("div");w.className="login-wrap";w.style.height="100%";
+  w.innerHTML=`<div class="logo-big">小</div><h1>小笼包</h1><div class="sub">标准溶液管理系统 · 平板版</div>
+    <div class="err" id="lerr"></div>
+    <input id="luser" placeholder="账号" autocomplete="off">
+    <input id="lpass" type="password" placeholder="密码">
+    <button id="lbtn">登 录</button>
+    <div class="offline-entry" id="offentry" style="${saved?"":"display:none"}">网络不可用？<a id="offbtn">离线进入，浏览缓存数据</a></div>`;
+  $app.appendChild(w);
+  $("#luser").focus();
+  const doLogin=async()=>{
+    try{
+      const j=await api("/api/login",{method:"POST",body:JSON.stringify({user:$("#luser").value,pass:$("#lpass").value})});
+      state.user=j.user;state.token=true;
+      await saveSession(j.user);
+      setPage("home");
+    }catch(e){$("#lerr").textContent=e.message}
+  };
+  $("#lbtn").onclick=doLogin;
+  $("#lpass").addEventListener("keydown",e=>{if(e.key==="Enter")doLogin()});
+  $("#offbtn").onclick=()=>{
+    if(!saved)return;
+    state.user=saved+"（离线）";state.token=false;setPage("home");
+    toast("离线模式：显示最近一次缓存数据")
+  };
+}
+/* ---------- 首页 ---------- */
+function renderHome(main){
+  const g=document.createElement("div");g.className="menu-grid";
+  CATS.forEach(c=>{
+    const d=document.createElement("div");d.className=`card ${c.color}`;
+    d.innerHTML=`<div class="ic">${c.icon}</div><h3>${c.name}</h3><p>${c.desc}</p>`;
+    d.onclick=()=>{state.subCat=c.key;setPage("sub")};
+    g.appendChild(d);
+  });
+  main.appendChild(g);
+}
+/* ---------- 分菜单 ---------- */
+function renderSub(main){
+  const c=CATS.find(x=>x.key===state.subCat);
+  const l=document.createElement("div");l.className="sub-list";
+  c.funcs.forEach(f=>{
+    const b=document.createElement("div");b.className="sub-btn";
+    b.innerHTML=`<div class="ic" style="background:var(--${c.color})">${f.name[0]}</div>
+      <div><div class="t">${f.name}</div><div class="d">${f.desc}</div></div>
+      <div class="arr">›</div>`;
+    b.onclick=()=>{state.func=f.key;setPage("func")};
+    l.appendChild(b);
+  });
+  main.appendChild(l);
+}
+/* ---------- 功能页分发 ---------- */
+function renderFunc(main){
+  const f=state.func;
+  if(f==="scan")renderScan(main);
+  else if(f==="receive")renderReceive(main);
+  else if(f==="stock")renderStock(main);
+  else if(f==="logs")renderLogs(main);
+  else if(f==="stocktake")renderStocktake(main);
+  else if(f==="cfg")renderCfg(main);
+}
+/* ---------- 扫码出入库 ---------- */
+function renderScan(main){
+  main.innerHTML=`<div class="scan-box">
+    <input id="scan" placeholder="将光标放此处，扫码枪扫描瓶码/品种码" autofocus>
+    <button class="btn btn-primary" id="scanbtn">查询</button></div>
+    <div id="scanresult"></div>`;
+  const inp=$("#scan");
+  const doScan=async()=>{
+    const code=inp.value.trim();if(!code)return;
+    try{
+      const j=await api("/api/scan",{method:"POST",body:JSON.stringify({code})});
+      showScanResult(j,code);
+    }catch(e){toast(e.message)}
+    inp.value="";inp.focus();
+  };
+  $("#scanbtn").onclick=doScan;
+  inp.addEventListener("keydown",e=>{if(e.key==="Enter")doScan()});
+  setTimeout(()=>inp.focus(),100);
+}
+function showScanResult(j,code){
+  const box=$("#scanresult");box.innerHTML="";
+  if(j.type==="product"){
+    const p=j.product;
+    box.innerHTML=`<div class="modal" style="max-width:90vw"><h3>品种码：${code}</h3>
+      <p>名称：${p.name}</p><p>标准物质编号：${p.std_id}</p>
+      <p>浓度：${p.conc} ${p.unit||""}</p><p>批号：${p.batch||""}</p>
+      <div class="row"><button class="btn btn-primary" onclick="goReceiveFromProduct('${p.name}','${p.std_id}','${p.conc}','${p.unit||""}','${p.batch||""}')">带入入库</button>
+      <button class="btn btn-gray" onclick="document.querySelector('#scanresult').innerHTML=''">关闭</button></div></div>`;
+  }else{
+    const it=j.item;
+    const st=it.status;let actions="";
+    if(st==="在库")actions=`<button class="btn btn-green" onclick="issueOne('${it.bottle_id}','use')">整瓶取用</button>
+      <button class="btn btn-blue" onclick="issueOne('${it.bottle_id}','out')">整瓶出库</button>`;
+    else if(st==="已出库"||st==="已取用")actions=`<button class="btn btn-green" onclick="returnOne('${it.bottle_id}')">归还入库</button>`;
+    else actions=`<span class="tag tag-discard">该瓶已作废</span>`;
+    box.innerHTML=`<div class="modal" style="max-width:90vw"><h3>${it.name}</h3>
+      <p>瓶号：${it.bottle_id}</p><p>浓度：${it.conc} ${it.unit||""}</p>
+      <p>批号：${it.batch}</p><p>库位：${it.location||"—"}</p>
+      <p>状态：<span class="tag ${tagCls(st)}">${st}</span></p>
+      <p>有效期至：${it.exp_date||""} ${it.open_exp_date?`(开封效期 ${it.open_exp_date})`:""}</p>
+      <div class="row">${actions}
+        <button class="btn btn-warn" onclick="reprint('${it.bottle_id}')">补打标签</button>
+        <button class="btn btn-gray" onclick="document.querySelector('#scanresult').innerHTML=''">关闭</button>
+      </div></div>`;
+  }
+}
+function tagCls(s){return s==="在库"?"tag-in":s==="已出库"?"tag-out":s==="已取用"?"tag-used":"tag-discard"}
+window.goReceiveFromProduct=function(name,std,conc,unit,batch){
+  state.func="receive";state._prefill={name,std_id:std,conc,unit,batch};render();
+}
+window.issueOne=async function(bid,action){
+  try{
+    const op=state.user.replace(/（离线）$/,"");
+    await apiWrite("/api/issue",{bottle_id:bid,action,operator:op},(action==="use"?"取用 ":"出库 ")+bid);
+    $("#scanresult").innerHTML="";
+  }catch(e){toast(e.message)}
+}
+window.returnOne=async function(bid){
+  const opened=confirm("归还时是否首次开封？");
+  try{
+    const op=state.user.replace(/（离线）$/,"");
+    await apiWrite("/api/return",{bottle_id:bid,opened,operator:op},"归还 "+bid);
+    $("#scanresult").innerHTML="";
+  }catch(e){toast(e.message)}
+}
+window.reprint=async function(bid){
+  try{
+    if(!navigator.onLine){
+      // 离线：用缓存的标签图片走浏览器打印
+      const j=await api(`/api/label_data/${bid}`);
+      if(j.image){printImage(j.image,1);toast("离线打印（使用缓存标签图）")}
+      else toast("离线且该标签无本地缓存")
+      return
+    }
+    const j=await api("/api/print",{method:"POST",body:JSON.stringify({bottle_id:bid,copies:1,mode:"auto"})});
+    if(j.mode==="browser")printImage(j.image,j.copies);
+    else toast("已发送至打印机："+j.printer);
+  }catch(e){toast(e.message)}
+}
+function printImage(dataUrl,copies){
+  const w=window.open("","_blank");
+  if(!w){toast("请允许弹出窗口以打印");return}
+  let html=`<html><head><title>打印标签</title></head><body style="margin:0;text-align:center">`;
+  for(let i=0;i<copies;i++)html+=`<img src="${dataUrl}" style="max-width:100%"><br>`;
+  html+=`<script>window.onload=()=>{window.print();setTimeout(()=>window.close(),500)}<\/script></body></html>`;
+  w.document.write(html);w.document.close();
+}
+/* ---------- 入库登记 ---------- */
+let recvSelLocs=[];
+function renderReceive(main){
+  const f=state._prefill||{};delete state._prefill;
+  main.innerHTML=`<div id="recform"></div>`;
+  buildRecvForm(main.querySelector("#recform"),f);
+}
+async function buildRecvForm(box,f){
+  const cfg=await api("/api/config");
+  const persons=(cfg.persons||"").split("\n").filter(Boolean);
+  const units=(cfg.units||"mL\nL\ng\nmg").split("\n").filter(Boolean);
+  const uses=(cfg.uses||"").split("\n").filter(Boolean);
+  const sols=(cfg.solvents||"").split("\n").filter(Boolean);
+  const projs=(cfg.project_nos||"").split("\n").filter(Boolean);
+  box.innerHTML=`<h3>入库登记</h3>
+    <div class="form-row"><label>溶液名称</label><input id="r_name" value="${f.name||""}"></div>
+    <div class="form-row"><label>标准物质编号</label><input id="r_std" value="${f.std_id||""}"></div>
+    <div class="form-row"><label>浓度</label><input id="r_conc" value="${f.conc||""}" placeholder="如 0.1000 mol/L"></div>
+    <div class="form-row"><label>单位</label><select id="r_unit">${units.map(u=>`<option ${u===(f.unit||"mL")?"selected":""}>${u}</option>`).join("")}</select></div>
+    <div class="form-row"><label>批号(4位数字)</label><input id="r_batch" value="${f.batch||""}" maxlength="4"></div>
+    <div class="form-row"><label>配置人</label><input id="r_maker" list="persons"></div>
+    <div class="form-row"><label>生产日期</label><input id="r_prod" type="date"></div>
+    <div class="form-row"><label>有效期至</label><input id="r_exp" type="date" placeholder="不填则按浓度推算"></div>
+    <div class="form-row"><label>规格</label><input id="r_init" type="number" step="0.01" placeholder="如 500"></div>
+    <div class="form-row"><label>开封后效期</label><input id="r_olv" type="number" placeholder="如 30" style="width:80px">
+      <select id="r_olu"><option>天</option><option>月</option></select></div>
+    <div class="form-row"><label>库位</label><div style="flex:1" id="locpicker"></div></div>
+    <div class="form-row"><label>入库数量</label><input id="r_qty" type="number" value="1" min="1" max="999"></div>
+    <div class="form-row"><label>经办人</label><input id="r_op" value="${cfg.default_operator||""}" list="persons"></div>
+    <div class="form-row"><label>项目编号</label><input id="r_proj" list="projs"></div>
+    <div class="form-row"><label>溶剂</label><input id="r_sol" list="sols"></div>
+    <div class="form-row"><label>备注</label><textarea id="r_note"></textarea></div>
+    <div style="display:flex;gap:8px;margin-top:14px">
+      <button class="btn btn-green" id="saveprint">保存并打印标签</button>
+      <button class="btn btn-primary" id="saveonly">仅保存</button>
+    </div>
+    <datalist id="persons">${persons.map(p=>`<option value="${p}">`).join("")}</datalist>
+    <datalist id="projs">${projs.map(p=>`<option value="${p}">`).join("")}</datalist>
+    <datalist id="sols">${sols.map(p=>`<option value="${p}">`).join("")}</datalist>`;
+  recvSelLocs=[];
+  await drawBoard($("#locpicker"));
+  const doSave=async(printAfter)=>{
+    const form={
+      name:$("#r_name").value.trim(),std_id:$("#r_std").value.trim(),
+      conc:$("#r_conc").value.trim(),unit:$("#r_unit").value,
+      batch:$("#r_batch").value.trim(),maker:$("#r_maker").value.trim(),
+      prod_date:$("#r_prod").value,exp_date:$("#r_exp").value,
+      init_amount:$("#r_init").value,
+      open_limit_value:$("#r_olv").value,open_limit_unit:$("#r_olu").value,
+      location:recvSelLocs.join(","),operator:$("#r_op").value.trim(),
+      project_no:$("#r_proj").value.trim(),solvent:$("#r_sol").value.trim(),
+      note:$("#r_note").value.trim(),
+    };
+    const qty=parseInt($("#r_qty").value)||1;
+    try{
+      const j=await apiWrite("/api/receive",{...form,qty},"入库 "+(form.name||"未命名")+" x"+qty);
+      if(j.offline){
+        // 离线：无瓶号，无法打印标签，同步后可在库存查询中补打
+        recvSelLocs=[];buildRecvForm(box,{});
+        return
+      }
+      toast(`入库成功：${j.bottle_ids.length} 瓶`);
+      if(printAfter){
+        for(const bid of j.bottle_ids){
+          try{const p=await api("/api/print",{method:"POST",body:JSON.stringify({bottle_id:bid,copies:1,mode:"auto"})});
+            if(p.mode==="browser")printImage(p.image,p.copies)}catch(e){}
+        }
+      }
+      recvSelLocs=[];buildRecvForm(box,{});
+    }catch(e){toast(e.message)}
+  };
+  $("#saveprint").onclick=()=>doSave(true);
+  $("#saveonly").onclick=()=>doSave(false);
+}
+async function drawBoard(container){
+  const locs=await api("/api/locations");
+  const small=locs.small_box,grid=locs.small_box_grid;
+  const occ=new Set(locs.occupied);
+  container.innerHTML=`<div style="font-size:12px;color:#999;margin-bottom:4px">点击空闲格选择（嫩绿=空闲，灰=占用，粉=已选）</div>
+    <div class="board" id="brd" style="grid-template-columns:repeat(${grid},1fr)"></div>`;
+  const bd=$("#brd");
+  for(let i=1;i<=small;i++){
+    const loc=i+"-"+String.fromCharCode(64+(i%grid||grid));
+    const cell=document.createElement("div");cell.className="cell"+(occ.has(loc)?" occ":"");
+    cell.textContent=loc;cell.dataset.loc=loc;
+    cell.onclick=()=>{
+      if(cell.classList.contains("occ"))return;
+      cell.classList.toggle("sel");
+      if(cell.classList.contains("sel"))recvSelLocs.push(loc);
+      else recvSelLocs=recvSelLocs.filter(l=>l!==loc);
+    };
+    bd.appendChild(cell);
+  }
+}
+/* ---------- 库存查询 ---------- */
+function renderStock(main){
+  main.innerHTML=`<div class="scan-box"><input id="sq" placeholder="瓶号/名称/编号/库位">
+    <select id="sst" style="padding:12px;border-radius:10px"><option value="">全部状态</option>
+    <option value="在库">在库</option><option value="已取用">已取用</option><option value="已出库">已出库</option><option value="已作废">已作废</option></select>
+    <button class="btn btn-primary" id="sbtn">查询</button></div>
+    <div class="tbl-wrap" id="sres"></div>`;
+  const load=async()=>{
+    const q=$("#sq").value,s=$("#sst").value;
+    const items=await api(`/api/items?q=${encodeURIComponent(q)}&status=${encodeURIComponent(s)}`);
+    const tb=`<table class="tbl"><thead><tr><th>瓶号</th><th>名称</th><th>浓度</th><th>批号</th><th>库位</th><th>状态</th><th>有效期</th><th>操作</th></tr></thead><tbody>
+      ${items.map(it=>`<tr><td>${it.bottle_id}</td><td>${it.name}</td><td>${it.conc||""} ${it.unit||""}</td>
+      <td>${it.batch||""}</td><td>${it.location||""}</td><td><span class="tag ${tagCls(it.status)}">${it.status}</span></td>
+      <td>${it.exp_date||""}</td>
+      <td><button class="btn btn-warn" style="padding:4px 8px;font-size:12px" onclick="reprint('${it.bottle_id}')">补打</button>
+      <button class="btn btn-danger" style="padding:4px 8px;font-size:12px" onclick="discardIt('${it.bottle_id}')">作废</button></td></tr>`).join("")}
+      </tbody></table>`;
+    $("#sres").innerHTML=items.length?tb:"<p style='text-align:center;color:#999;padding:20px'>无数据</p>";
+  };
+  $("#sbtn").onclick=load;$("#sq").addEventListener("keydown",e=>{if(e.key==="Enter")load()});
+  load();
+}
+window.discardIt=async function(bid){
+  const reason=prompt("作废原因：")||"";
+  if(reason===""){toast("需填写原因");return}
+  try{
+    const op=state.user.replace(/（离线）$/,"");
+    await apiWrite("/api/discard",{bottle_id:bid,reason,operator:op},"作废 "+bid);
+    renderStock(document.querySelector(".main"))
+  }
+  catch(e){toast(e.message)}
+}
+/* ---------- 流水台账 ---------- */
+function renderLogs(main){
+  main.innerHTML=`<div class="scan-box"><input id="lq" placeholder="瓶号/名称/操作人">
+    <input id="ldays" type="number" placeholder="最近N天" style="width:100px;padding:12px;border-radius:10px">
+    <button class="btn btn-primary" id="lbtn">查询</button>
+    <button class="btn btn-blue" id="lexp">导出Excel</button></div>
+    <div class="tbl-wrap" id="lres"></div>`;
+  const load=async()=>{
+    const q=$("#lq").value,d=$("#ldays").value;
+    let url="/api/logs?";if(q)url+="q="+encodeURIComponent(q)+"&";if(d)url+="days="+d;
+    const logs=await api(url);
+    const tb=`<table class="tbl"><thead><tr><th>时间</th><th>瓶号</th><th>名称</th><th>操作</th><th>操作人</th><th>备注</th></tr></thead><tbody>
+      ${logs.map(l=>`<tr><td>${l.time||""}</td><td>${l.bottle_id||""}</td><td>${l.name||""}</td>
+      <td>${l.action||""}</td><td>${l.operator||""}</td><td>${l.note||""}</td></tr>`).join("")}
+      </tbody></table>`;
+    $("#lres").innerHTML=logs.length?tb:"<p style='text-align:center;color:#999;padding:20px'>无数据</p>";
+  };
+  $("#lbtn").onclick=load;$("#lq").addEventListener("keydown",e=>{if(e.key==="Enter")load()});
+  $("#lexp").onclick=async()=>{
+    // 单机模式：前端生成 CSV 下载；联网模式可走服务端 Excel
+    const logs=await api("/api/logs");
+    if(!logs.length){toast("无数据可导出");return}
+    const headers=["流水号","时间","瓶号","溶液名称","操作类型","数量","单位","领用人","用途","经办人","备注"];
+    const keys=["log_id","time","bottle_id","name","action","qty","unit","person","purpose","operator","note"];
+    let csv="\uFEFF"+headers.join(",")+"\n";
+    for(const l of logs){ csv+=keys.map(k=>`"${String(l[k]||"").replace(/"/g,'""')}"`).join(",")+"\n"; }
+    const blob=new Blob([csv],{type:"text/csv;charset=utf-8"});
+    const a=document.createElement("a");
+    a.href=URL.createObjectURL(blob);
+    a.download=`出入库流水_${new Date().toISOString().slice(0,10)}.csv`;
+    a.click();
+  };
+  load();
+}
+/* ---------- 扫码盘点 ---------- */
+let stScope=[],stFound=[];
+function renderStocktake(main){
+  main.innerHTML=`<div class="scan-box"><input id="tscan" placeholder="扫描库位瓶码" autofocus>
+    <button class="btn btn-primary" id="tbtn">盘点</button></div>
+    <div id="tstat" style="margin-bottom:10px"></div>
+    <div id="tresult"></div>
+    <button class="btn btn-green" id="tstart">开始盘点（在库）</button>
+    <button class="btn btn-blue" id="trep" style="margin-left:8px">生成差异报告</button>`;
+  $("#tstart").onclick=async()=>{
+    const j=await api("/api/stocktake/start",{method:"POST",body:JSON.stringify({scope:"in"})});
+    stScope=j.scope;stFound=[];$("#tresult").innerHTML="";updStat();
+    toast(`盘点开始：共 ${j.count} 瓶在库`);$("#tscan").focus();
+  };
+  const updStat=()=>{$("#tstat").innerHTML=`已扫 <b>${stFound.length}</b> / ${stScope.length} 瓶`};
+  $("#tbtn").onclick=()=>{
+    const code=$("#tscan").value.trim();if(!code)return;
+    if(stFound.includes(code))toast("重复扫码");
+    else{stFound.push(code);if(!stScope.includes(code))toast("未知瓶："+code)}
+    $("#tscan").value="";updStat();$("#tscan").focus();
+  };
+  $("#tscan").addEventListener("keydown",e=>{if(e.key==="Enter")$("#tbtn").click()});
+  $("#trep").onclick=async()=>{
+    const j=await api("/api/stocktake/report",{method:"POST",body:JSON.stringify({found:stFound,scope:stScope})});
+    const r=j.report;
+    $("#tresult").innerHTML=`<h4>差异报告</h4><p>应盘 ${j.scope_count}，实扫 ${j.found_count}</p>
+      <div class="tbl-wrap"><table class="tbl"><thead><tr><th>类型</th><th>瓶号</th><th>名称</th></tr></thead><tbody>
+      ${r.map(x=>`<tr><td>${x.type==="missing"?"盘亏":"未知瓶"}</td><td>${x.bottle_id}</td><td>${x.name}</td></tr>`).join("")}
+      </tbody></table></div>`;
+  };
+}
+/* ---------- 参数设置 ---------- */
+function renderCfg(main){
+  api("/api/config").then(cfg=>{
+    const keys=["login_user","login_pass","id_prefix","default_operator","label_width","label_height",
+      "label_dpi","big_box","small_box","label_printer","locations","persons","uses","units"];
+    const labels={login_user:"登录账号",login_pass:"登录密码",id_prefix:"瓶号前缀",
+      default_operator:"默认经办人",label_width:"标签宽度(mm)",label_height:"标签高度(mm)",
+      label_dpi:"打印机DPI",big_box:"大盒格数",small_box:"小盒格数",label_printer:"标签打印机",
+      locations:"库位字典(每行一个)",persons:"人员(每行一个)",uses:"用途(每行一个)",units:"单位(每行一个)"};
+    let html=`<h3>参数设置</h3>`;
+    keys.forEach(k=>{
+      const v=cfg[k]??"";
+      const isLong=["locations","persons","uses","units"].includes(k);
+      html+=`<div class="form-row"><label>${labels[k]}</label>${isLong?
+        `<textarea id="c_${k}" rows="3">${v}</textarea>`:
+        `<input id="c_${k}" value="${String(v).replace(/"/g,"&quot;")}" ${k==="login_pass"?'type="password"':""}>`}</div>`;
+    });
+    html+=`<div style="display:flex;gap:8px;margin-top:14px">
+      <button class="btn btn-green" id="csave">保存设置</button>
+      <button class="btn btn-blue" id="cbackup">备份数据</button></div>`;
+    if(isNative){
+      html+=`<h3 style="margin-top:26px">服务器连接</h3>
+        <div class="form-row"><label>服务器地址</label>
+          <div style="flex:1;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <input id="cserverbase" value="${serverBase}" style="flex:1;min-width:220px" placeholder="192.168.0.107:8765">
+            <button class="btn btn-gray" id="cservertest" style="padding:8px 14px">测试连接</button>
+            <button class="btn btn-blue" id="cserversave" style="padding:8px 14px">保存地址</button>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+          <button class="btn btn-green" id="cpull" style="padding:8px 14px">从电脑同步数据</button>
+          <button class="btn btn-primary" id="cpush" style="padding:8px 14px">上传数据到电脑</button>
+        </div>`;
+    }
+    html+=`<h3 style="margin-top:26px">离线缓存</h3>
+      <div class="form-row" style="align-items:flex-start"><label>缓存状态</label>
+        <div style="flex:1;font-size:14px;color:#555;line-height:1.9">
+          <div id="cachestat"></div>
+          <div id="storagestat" style="margin-top:4px;font-size:13px;color:#888"></div>
+          <div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap">
+            <button class="btn btn-primary" id="cflush" style="padding:8px 14px">立即同步离线操作</button>
+            <button class="btn btn-warn" id="cclear" style="padding:8px 14px">清空本地数据缓存</button>
+          </div>
+          <div style="color:#999;font-size:12px;margin-top:6px">清缓存不影响服务器数据；离线操作记录请在同步完成后再清理。</div>
+        </div>
+      </div>
+      <h3 style="margin-top:26px">蓝牙标签打印机</h3>
+      <div class="form-row" style="align-items:flex-start"><label>打印机管理</label>
+        <div style="flex:1;font-size:14px;color:#555;line-height:1.9">
+          <div id="btstat" style="margin-bottom:6px">未连接</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-blue" id="btscan" style="padding:8px 14px">搜索打印机</button>
+            <button class="btn btn-green" id="bttest" style="padding:8px 14px">测试打印</button>
+            <button class="btn btn-warn" id="btdisc" style="padding:8px 14px">断开</button>
+          </div>
+          <div id="btlist" style="margin-top:8px"></div>
+          <div style="color:#999;font-size:12px;margin-top:6px">支持蓝牙标签打印机（汉印/佳博/得力/芯烨等 ESC/POS 协议）；未连接时标签将走浏览器打印。</div>
+        </div>
+      </div>`;
+    main.innerHTML=html;
+    const refreshCacheStat=()=>{
+      const n=getQueue().length;
+      $("#cachestat").innerHTML=navigator.onLine
+        ? (n?`在线 · 有 <b style="color:#e67e22">${n}</b> 条离线操作待同步`:"在线 · 所有操作均已同步")
+        : `离线模式 · <b style="color:#e74c3c">${n}</b> 条操作待联网后同步`;
+    };
+    const fmtKB=b=>b>=1048576?(b/1048576).toFixed(2)+" MB":Math.max(1,Math.round(b/1024))+" KB";
+    async function refreshStorageStat(){
+      let storedNew=0,raw=0,cnt=0,gz=0,legacy=0;
+      try{
+        const c=await caches.open("xlb-data-v4");
+        const ks=await c.keys();
+        for(const k of ks){
+          const r=await c.match(k);if(!r)continue;
+          const txt=await r.clone().text();
+          try{
+            const w=JSON.parse(txt);
+            if(w&&w.xlbenc){
+              cnt++;
+              if(typeof w.rawsize==="number"){
+                raw+=w.rawsize;
+                // 信封体积近似（仅 JSON 包装 ASCII 部分）
+                storedNew+=txt.length;
+                if(w.cmp==="gzip")gz++;
+              }else legacy++;
+            }
+          }catch(e){}
+        }
+      }catch(e){}
+      let extra="";
+      if(raw>0){
+        const ratio=Math.round((1-storedNew/raw)*100);
+        extra=`；gzip 压缩后约 <b>${fmtKB(storedNew)}</b>（原始 ${fmtKB(raw)}，节省约 ${Math.max(0,ratio)}%，${gz}/${cnt} 项已压缩${legacy?`，另有 ${legacy} 项旧格式待浏览时自动重压缩`:""}）`;
+      }
+      $("#storagestat").innerHTML=`加密缓存 <b>${cnt}</b> 项${extra}`;
+    }
+    const refreshAll=()=>{refreshCacheStat();refreshStorageStat()};
+    refreshAll();
+    $("#csave").onclick=async()=>{
+      const data={};keys.forEach(k=>data[k]=$("#c_"+k).value);
+      try{await apiWrite("/api/config",data,"保存参数设置");refreshCacheStat()}catch(e){toast(e.message)}
+    };
+    $("#cbackup").onclick=()=>{window.location.href=API+"/api/backup"};
+    $("#cflush").onclick=async()=>{
+      if(!navigator.onLine){toast("当前离线，无法同步");return}
+      if(!getQueue().length){toast("没有待同步的操作");return}
+      await flushQueue();refreshAll();
+    };
+    $("#cclear").onclick=async()=>{
+      if(!confirm("将清空本地缓存的库存/流水/标签数据与离线操作记录，确定？"))return;
+      await saveQueue([]);
+      try{
+        await caches.delete("xlb-data-v4");
+        if(navigator.serviceWorker.controller)navigator.serviceWorker.controller.postMessage({type:"CLEAR_DATA"});
+      }catch(e){}
+      refreshAll();toast("本地数据缓存已清空")
+    };
+    if(isNative){
+      $("#cservertest").onclick=async()=>{
+        try{
+          const info=await testServerBase($("#cserverbase").value);
+          toast("连接成功："+(info.app_name||"小笼包")+" v"+info.version+"，"+info.items+" 条库存")
+        }catch(e){toast(e.message)}
+      };
+      $("#cserversave").onclick=async()=>{
+        const v=$("#cserverbase").value;
+        try{
+          const info=await testServerBase(v); // 先测通才保存
+          await saveServerBase(v);
+          // 新服务器数据不同，清空旧本地缓存（不影响服务器）
+          await saveQueue([]);
+          try{
+            await caches.delete("xlb-data-v4");
+            if(navigator.serviceWorker.controller)navigator.serviceWorker.controller.postMessage({type:"CLEAR_DATA"});
+          }catch(e){}
+          refreshAll();
+          toast("地址已保存："+(info.app_name||"")+" v"+info.version+"，旧缓存已清空")
+        }catch(e){toast(e.message)}
+      };
+      $("#cpull").onclick=async()=>{
+        if(!serverBase){toast("请先保存服务器地址");return}
+        try{
+          toast("正在从电脑拉取数据...");
+          await XLBLocalApi.syncFromServer(serverBase);
+          refreshAll();toast("已从电脑同步数据")
+        }catch(e){toast("同步失败："+e.message)}
+      };
+      $("#cpush").onclick=async()=>{
+        if(!serverBase){toast("请先保存服务器地址");return}
+        if(!confirm("将把本机全部数据上传到电脑端（合并模式，不删除电脑数据），确定？"))return;
+        try{
+          toast("正在上传数据到电脑...");
+          await XLBLocalApi.syncToServer(serverBase);
+          toast("数据已上传到电脑")
+        }catch(e){toast("上传失败："+e.message)}
+      };
+    }
+    // ---- 蓝牙打印机 ----
+    const btSupported=!!(window.XLBBluetoothPrint&&window.XLBBluetoothPrint.isSupported());
+    if(!btSupported){ $("#btstat").innerHTML='<span style="color:#999">当前环境不支持蓝牙打印（仅原生 APK 可用）</span>'; }
+    const updateBtStat=()=>{ $("#btstat").innerHTML = window.XLBBluetoothPrint&&window.XLBBluetoothPrint.isConnected()
+      ? '<span style="color:#51cf66">● 已连接</span>' : '<span style="color:#999">未连接</span>'; };
+    updateBtStat();
+    $("#btscan").onclick=async()=>{
+      if(!btSupported){toast("请在原生 APK 中使用蓝牙打印");return}
+      try{
+        $("#btlist").innerHTML='<span style="color:#888">搜索中（10秒）...</span>';
+        const list=document.createElement("div");
+        $("#btlist").innerHTML="";$("#btlist").appendChild(list);
+        await window.XLBBluetoothPrint.scanDevices(d=>{
+          const item=document.createElement("div");
+          item.style.cssText="padding:6px 10px;margin:4px 0;background:#f5f5f5;border-radius:4px;cursor:pointer";
+          item.textContent=d.name+" ("+d.deviceId.slice(0,8)+"...)";
+          item.onclick=async()=>{
+            try{ await window.XLBBluetoothPrint.connect(d.deviceId); updateBtStat(); toast("已连接："+d.name); }
+            catch(e){ toast("连接失败："+e.message); }
+          };
+          list.appendChild(item);
+        });
+        if(!list.children.length) $("#btlist").innerHTML='<span style="color:#999">未发现设备，请确认打印机已开机并处于配对模式</span>';
+      }catch(e){ toast(e.message); }
+    };
+    $("#bttest").onclick=async()=>{
+      if(!btSupported||!window.XLBBluetoothPrint.isConnected()){toast("请先连接打印机");return}
+      try{ await window.XLBBluetoothPrint.printTest(); toast("测试指令已发送"); }
+      catch(e){ toast("打印失败："+e.message); }
+    };
+    $("#btdisc").onclick=async()=>{
+      if(window.XLBBluetoothPrint) try{ await window.XLBBluetoothPrint.disconnect(); updateBtStat(); toast("已断开"); }catch(e){}
+    };
+  });
+}
+/* ---------- 启动 ---------- */
+window.addEventListener("DOMContentLoaded",async()=>{
+  $app=$("#app");
+  // 先解密本地存储（自动迁移历史明文）
+  await initSecureStorage();
+  // 初始化本地 Store（单机模式核心：从 IndexedDB 加载业务数据）
+  if(window.XLBLocalApi) await window.XLBLocalApi.init();
+  // 读取服务端地址（仅用于可选的联网数据同步，非必需）
+  await loadServerBase();
+  // 恢复上次登录会话：PWA 重开免登录
+  if(sessMem){
+    state.user=sessMem;
+    state.page="home";
+  }
+  render();
+});
+if("serviceWorker" in navigator){navigator.serviceWorker.register("sw.js").catch(()=>{})}
+</script>
+</body>
+</html>
