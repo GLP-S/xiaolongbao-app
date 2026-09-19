@@ -6,7 +6,10 @@
 const SHELL_CACHE = "xlb-shell-v4";
 const DATA_CACHE = "xlb-data-v4";
 const ALL_CACHES = [SHELL_CACHE, DATA_CACHE];
-const ASSETS = ["./", "./index.html", "./manifest.json", "./icon-192.png", "./icon-512.png"];
+const ASSETS = [
+  "./", "./index.html", "./manifest.json", "./icon-192.png", "./icon-512.png",
+  "./store.js", "./db.js", "./label.js", "./api_local.js", "./bluetooth_print.js"
+];
 
 // 页面通过 IndexedDB(kv, key=server_base) 共享地址；null 表示尚未读取
 let swBase = null;
