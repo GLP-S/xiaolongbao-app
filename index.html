@@ -4,14 +4,14 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="小笼包">
-<meta name="theme-color" content="#ff6b9d">
+<meta name="theme-color" content="#2B2F33">
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
-<title>小笼包 · 标准溶液管理</title>
-<!-- 单机版核心模块：业务逻辑 + IndexedDB + 标签渲染 + 本地 API 适配 -->
+<title>小笼包 v3.0 · 标准溶液管理</title>
+<!-- 单版本：本地优先（IndexedDB），联网经 server_url 自动双向同步 -->
 <script src="store.js"></script>
 <script src="db.js"></script>
 <script src="label.js"></script>
@@ -19,695 +19,832 @@
 <script src="bluetooth_print.js"></script>
 <style>
 :root{
-  --pink:#ff6b9d;--blue:#4dabf7;--green:#51cf66;--purple:#cc5de8;--yellow:#ffd43b;
-  --bg:#f7f5f2;--card:#fff;--text:#333;--muted:#999;--border:#eee;
-  --shadow:0 4px 18px rgba(0,0,0,.08);
+  --bg:#2B2F33; --bg2:#24282C; --panel:#34393F; --panel2:#3C4249;
+  --line:#454C54; --line2:#3A4047;
+  --green:#8FBC8F; --green-d:#6E9C6E; --green-dd:#557E55;
+  --text:#E8ECEA; --muted:#9AA2A8;
+  --danger:#C46A66; --danger-d:#8E4C49; --warn:#D9B26A;
+  --radius:14px;
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-html,body{margin:0;padding:0;height:100%;font-family:-apple-system,"Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);font-size:15px}
+html,body{margin:0;padding:0;height:100%;
+  font-family:"Microsoft YaHei UI","Microsoft YaHei","PingFang SC",system-ui,-apple-system,sans-serif;
+  background:var(--bg);color:var(--text);font-size:15px}
 #app{display:flex;flex-direction:column;height:100vh;height:100dvh;max-width:1000px;margin:0 auto;background:var(--bg)}
-/* 顶栏 */
-.bar{display:flex;align-items:center;padding:10px 14px;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,.05);z-index:10;gap:8px;flex-shrink:0}
-.bar .logo{width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,var(--pink),var(--purple));display:flex;align-items:center;justify-content:center;color:#fff;font-weight:bold;font-size:18px;flex-shrink:0}
-.bar .title{font-size:16px;font-weight:600;flex:1}
-.bar .user{font-size:13px;color:var(--muted);padding:4px 10px;background:#f0f0f0;border-radius:12px}
-.bar button{border:none;background:var(--pink);color:#fff;padding:7px 14px;border-radius:8px;font-size:13px;cursor:pointer}
-.net-dot{display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);background:#f3f4f6;padding:4px 10px;border-radius:20px}
+/* ---------- 顶栏 ---------- */
+.bar{display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--bg2);
+  border-bottom:1px solid var(--line);flex-shrink:0}
+.brand{display:flex;align-items:center;gap:9px;flex:1;min-width:0}
+.logo{width:34px;height:34px;border-radius:10px;background:var(--green);color:#1F2420;
+  display:flex;align-items:center;justify-content:center;font-weight:800;font-size:17px;flex-shrink:0;
+  box-shadow:0 3px 0 var(--green-dd)}
+.title{font-size:16px;font-weight:700;white-space:nowrap}
+.title .ver{font-size:11px;color:var(--muted);font-weight:500;margin-left:5px}
+.net-dot{display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);
+  background:var(--panel);border:1px solid var(--line);padding:4px 10px;border-radius:20px}
 .net-dot .nd{width:8px;height:8px;border-radius:50%;display:inline-block}
-.net-dot.online .nd{background:#2f9e44;box-shadow:0 0 4px rgba(47,158,68,.6)}
-.net-dot.offline .nd{background:#e03131;box-shadow:0 0 4px rgba(224,49,49,.6)}
-.offline-entry{font-size:13px;color:var(--muted);margin-top:18px}
-.offline-entry a{color:var(--pink);text-decoration:underline}
-.crumb{font-size:12px;color:var(--muted);padding:6px 16px;background:#fafafa;flex-shrink:0;border-bottom:1px solid var(--border)}
-.crumb span{cursor:pointer}
-.crumb span:hover{color:var(--pink)}
-/* 主体可滚动 */
+.net-dot.online .nd{background:var(--green)}
+.net-dot.offline .nd{background:var(--danger)}
+.user-chip{font-size:12px;color:var(--text);background:var(--panel);border:1px solid var(--line);
+  padding:4px 10px;border-radius:20px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* ---------- 主体 ---------- */
 .main{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:14px}
-/* 登录页 */
-.login-wrap{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px}
-.login-wrap .logo-big{width:96px;height:96px;border-radius:24px;background:linear-gradient(135deg,var(--pink),var(--purple));display:flex;align-items:center;justify-content:center;color:#fff;font-size:48px;font-weight:bold;box-shadow:var(--shadow);margin-bottom:16px}
-.login-wrap h1{font-size:24px;margin:8px 0 4px}
-.login-wrap .sub{color:var(--muted);font-size:13px;margin-bottom:28px}
-.login-wrap input{width:100%;max-width:320px;padding:12px 14px;border:1px solid var(--border);border-radius:10px;font-size:15px;margin-bottom:12px;background:#fff}
-.login-wrap button{width:100%;max-width:320px;padding:13px;background:linear-gradient(135deg,var(--pink),var(--purple));color:#fff;border:none;border-radius:10px;font-size:16px;font-weight:600;cursor:pointer}
-.login-wrap .err{color:#e03131;font-size:13px;margin-bottom:10px;min-height:18px}
-/* 主菜单卡片 */
-.menu-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
-.card{background:var(--card);border-radius:16px;padding:24px 16px;text-align:center;box-shadow:var(--shadow);cursor:pointer;transition:transform .12s;border:3px solid transparent}
-.card:active{transform:scale(.96)}
-.card .ic{width:56px;height:56px;border-radius:50%;margin:0 auto 12px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:26px;font-weight:bold}
-.card h3{margin:4px 0;font-size:17px}
-.card p{margin:0;font-size:12px;color:var(--muted)}
-.card.pink .ic{background:var(--pink)}
-.card.blue .ic{background:var(--blue)}
-.card.green .ic{background:var(--green)}
-.card.purple .ic{background:var(--purple)}
-/* 分菜单长条 */
-.sub-list{display:flex;flex-direction:column;gap:12px;max-width:600px;margin:0 auto}
-.sub-btn{display:flex;align-items:center;gap:14px;background:#fff;border-radius:14px;padding:16px 18px;box-shadow:var(--shadow);cursor:pointer;transition:transform .12s;border:3px solid transparent}
-.sub-btn:active{transform:scale(.98)}
-.sub-btn .ic{width:48px;height:48px;border-radius:12px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px;flex-shrink:0}
-.sub-btn .t{font-size:16px;font-weight:600}
-.sub-btn .d{font-size:12px;color:var(--muted)}
-.sub-btn .arr{margin-left:auto;color:var(--muted);font-size:20px}
-/* 按钮 */
-.btn{border:none;padding:10px 18px;border-radius:10px;font-size:14px;cursor:pointer;font-weight:500}
-.btn-primary{background:linear-gradient(135deg,var(--pink),var(--purple));color:#fff}
-.btn-green{background:var(--green);color:#fff}
-.btn-blue{background:var(--blue);color:#fff}
-.btn-warn{background:var(--yellow);color:#333}
-.btn-gray{background:#eee;color:#333}
-.btn-danger{background:#e03131;color:#fff}
-/* 表单 */
-.form-row{display:flex;align-items:center;margin-bottom:10px;gap:8px}
-.form-row label{width:100px;font-size:14px;color:#555;flex-shrink:0}
-.form-row input,.form-row select,.form-row textarea{flex:1;padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:#fff}
-.form-row textarea{resize:vertical;min-height:44px}
-/* 表格 */
-.tbl{width:100%;border-collapse:collapse;background:#fff;border-radius:10px;overflow:hidden;font-size:13px}
-.tbl th,.tbl td{padding:8px 6px;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap}
-.tbl th{background:#f5f5f5;font-weight:600}
-.tbl-wrap{overflow-x:auto}
-/* 弹窗 */
-.mask{position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:100;padding:16px}
-.modal{background:#fff;border-radius:16px;padding:20px;max-width:90vw;width:480px;max-height:85vh;overflow-y:auto}
-.modal h3{margin:0 0 14px}
-.modal .row{display:flex;gap:8px;margin-top:14px;justify-content:flex-end}
-/* 扫码框 */
-.scan-box{display:flex;gap:8px;margin-bottom:14px}
-.scan-box input{flex:1;padding:12px;border:2px solid var(--pink);border-radius:10px;font-size:15px}
-.scan-box button{padding:12px 18px}
-/* 标签 */
-.tag{display:inline-block;padding:2px 8px;border-radius:8px;font-size:12px}
-.tag-in{background:#d3f9d8;color:#2b8a3e}
-.tag-out{background:#ffe3e3;color:#c92a2a}
-.tag-used{background:#fff3bf;color:#e67700}
-.tag-discard{background:#dee2e6;color:#868e96}
-/* 库位棋盘 */
-.board{display:grid;gap:4px;margin:10px 0}
-.cell{aspect-ratio:1;background:#d3f9d8;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:11px;color:#2b8a3e;cursor:pointer;font-weight:600;border:2px solid transparent}
-.cell.occ{background:#adb5bd;color:#fff;cursor:not-allowed}
-.cell.sel{background:var(--pink);color:#fff;border-color:#c2255c}
-/* toast */
-.toast{position:fixed;top:20px;left:50%;transform:translateX(-50%);background:#333;color:#fff;padding:10px 20px;border-radius:8px;z-index:999;font-size:14px}
-/* 平板横屏 */
-@media(min-width:760px){
-  .menu-grid{grid-template-columns:1fr 1fr 1fr 1fr}
-}
+/* ---------- 通用面板/文字 ---------- */
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:16px;margin-bottom:14px}
+.panel h3{margin:0 0 12px;font-size:16px}
+.hint{font-size:12px;color:var(--muted);line-height:1.7;margin:6px 2px}
+.kv{display:grid;grid-template-columns:88px 1fr;gap:6px 12px;font-size:14px}
+.kv .k{color:var(--muted)}
+.kv .v{word-break:break-all}
+hr.sep{border:none;border-top:1px solid var(--line);margin:16px 0}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:0 12px}
+@media(max-width:480px){.grid2{grid-template-columns:1fr}}
+/* ---------- 按钮（3D 立体） ---------- */
+.btn{border:none;border-radius:var(--radius);padding:11px 18px;font-size:14px;font-weight:700;
+  cursor:pointer;background:var(--green);color:#20251F;box-shadow:0 4px 0 var(--green-dd);
+  transition:transform .08s,box-shadow .08s;font-family:inherit;line-height:1.2}
+.btn:active{transform:translateY(3px);box-shadow:0 1px 0 var(--green-dd)}
+.btn.secondary{background:var(--panel2);color:var(--text);box-shadow:0 4px 0 #2A2E33;border:1px solid var(--line)}
+.btn.secondary:active{box-shadow:0 1px 0 #2A2E33}
+.btn.danger{background:var(--danger);color:#fff;box-shadow:0 4px 0 var(--danger-d)}
+.btn.danger:active{box-shadow:0 1px 0 var(--danger-d)}
+.btn.ghost{background:transparent;color:var(--green);box-shadow:none;border:1px solid var(--green-d)}
+.btn.ghost:active{transform:translateY(2px);box-shadow:none}
+.btn-sm{padding:7px 12px;border-radius:10px;font-size:13px;box-shadow:0 3px 0 var(--green-dd)}
+.btn-sm:active{transform:translateY(2px);box-shadow:0 1px 0 var(--green-dd)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.actions{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap}
+/* ---------- 表单 ---------- */
+input,select,textarea{background:var(--bg2);border:1px solid var(--line);color:var(--text);
+  border-radius:10px;padding:10px 12px;font-size:14px;font-family:inherit;width:100%}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--green-d)}
+input[readonly]{color:var(--muted);cursor:not-allowed}
+textarea{resize:vertical;min-height:60px}
+.fld{display:block;margin-bottom:11px;font-size:13px;color:var(--muted)}
+.fld>span{display:block;margin-bottom:5px}
+.fld .inline{display:flex;gap:8px}
+.searchbar{display:flex;gap:8px}
+.searchbar input{flex:1}
+/* ---------- 功能二级 pill ---------- */
+.pills{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+.pill{padding:8px 16px;border-radius:20px;background:var(--panel);border:1px solid var(--line);
+  color:var(--muted);cursor:pointer;font-size:13px;font-weight:700;font-family:inherit}
+.pill.active{background:var(--green);color:#20251F;border-color:var(--green)}
+/* ---------- 底部 Tab（按权限过滤） ---------- */
+.tabbar{display:flex;background:var(--bg2);border-top:1px solid var(--line);flex-shrink:0;
+  padding-bottom:env(safe-area-inset-bottom)}
+.tab{flex:1;background:none;border:none;color:var(--muted);padding:8px 4px 6px;cursor:pointer;
+  display:flex;flex-direction:column;align-items:center;gap:3px;font-size:12px;font-family:inherit;font-weight:600}
+.tab.active{color:var(--green)}
+.tab svg{width:22px;height:22px}
+/* ---------- 表格 ---------- */
+.tbl-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:12px;background:var(--panel)}
+.tbl{width:100%;border-collapse:collapse;font-size:13px}
+.tbl th{text-align:left;padding:9px 8px;color:var(--muted);font-weight:600;
+  border-bottom:1px solid var(--line);white-space:nowrap;background:var(--panel)}
+.tbl td{padding:9px 8px;border-bottom:1px solid var(--line2);white-space:nowrap}
+.tbl tr.rw{cursor:pointer}
+.tbl tr.rw:active td{background:var(--panel2)}
+.mini{padding:4px 9px;font-size:12px;border-radius:8px;box-shadow:0 2px 0 var(--green-dd)}
+.mini:active{transform:translateY(2px);box-shadow:none}
+.mini.secondary{box-shadow:0 2px 0 #2A2E33}
+.mini.danger{box-shadow:0 2px 0 var(--danger-d)}
+/* ---------- 状态标签 ---------- */
+.tag{display:inline-block;padding:2px 9px;border-radius:8px;font-size:12px;font-weight:700}
+.tag-in{background:rgba(143,188,143,.18);color:#9FCC9F}
+.tag-out{background:rgba(196,106,102,.2);color:#E79C98}
+.tag-used{background:rgba(217,178,106,.2);color:#E5C286}
+.tag-discard{background:rgba(160,160,160,.18);color:#B8BEC3}
+/* ---------- 库位棋盘（方形网格 × 圆形位点） ---------- */
+.board-wrap{overflow-x:auto;padding-bottom:6px}
+.board{display:grid;gap:8px;--slot:36px;
+  grid-template-columns:repeat(var(--cols),var(--slot));margin:10px 0;width:max-content}
+.slot{width:var(--slot);height:var(--slot);border-radius:50%;border:none;background:var(--green);
+  color:#23301F;font-size:11px;font-weight:800;cursor:pointer;display:flex;align-items:center;
+  justify-content:center;padding:0;font-family:inherit;transition:transform .08s}
+.slot:active:not(.occ){transform:scale(.9)}
+.slot.occ{background:#6C757D;color:#EDF0F2;cursor:not-allowed}
+.slot.sel{background:#F2F5F1;color:#1F2420;
+  box-shadow:0 0 0 3px var(--green-d),0 2px 6px rgba(0,0,0,.45)}
+/* ---------- 弹窗 ---------- */
+.mask{position:fixed;inset:0;background:rgba(10,12,14,.68);display:flex;align-items:center;
+  justify-content:center;z-index:100;padding:16px}
+.modal{background:var(--panel);border:1px solid var(--line);border-radius:18px;width:520px;
+  max-width:92vw;max-height:88vh;overflow-y:auto;padding:18px}
+.modal h3{margin:0 0 12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.dual{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:14px}
+.codebox{background:#fff;border-radius:12px;padding:10px;text-align:center}
+.codebox .cap{color:#333;font-size:12px;font-weight:800;margin-bottom:6px}
+.codebox img{max-width:100%;max-height:190px}
+.codebox .pending{color:#888;font-size:12px}
+@media(max-width:480px){.dual{grid-template-columns:1fr}}
+/* ---------- 复选胶囊 ---------- */
+.chk-row{display:flex;gap:8px;flex-wrap:wrap}
+.chk{display:inline-flex;align-items:center;gap:6px;background:var(--bg2);border:1px solid var(--line);
+  padding:7px 12px;border-radius:20px;font-size:13px;color:var(--text);cursor:pointer}
+.chk input{width:auto;accent-color:var(--green)}
+/* ---------- 盒管理行 ---------- */
+.boxrow{display:grid;grid-template-columns:1fr 104px 72px 72px 42px;gap:8px;
+  align-items:center;margin-bottom:8px}
+@media(max-width:480px){.boxrow{grid-template-columns:1fr 88px 60px 60px 38px}}
+/* ---------- toast ---------- */
+.toast{position:fixed;top:18px;left:50%;transform:translateX(-50%);background:#1E2226;
+  border:1px solid var(--green-d);color:var(--text);padding:10px 18px;border-radius:12px;
+  z-index:300;font-size:14px;box-shadow:0 8px 24px rgba(0,0,0,.45);max-width:88vw}
+/* ---------- 登录 ---------- */
+.login-wrap{flex:1;display:flex;align-items:center;justify-content:center;padding:24px}
+.login-card{width:100%;max-width:360px;background:var(--panel);border:1px solid var(--line);
+  border-radius:20px;padding:28px 24px;text-align:center}
+.logo-big{width:72px;height:72px;border-radius:20px;background:var(--green);color:#1F2420;
+  font-size:34px;font-weight:800;display:flex;align-items:center;justify-content:center;
+  margin:0 auto 14px;box-shadow:0 6px 0 var(--green-dd)}
+.login-card h1{font-size:20px;margin:6px 0 2px}
+.login-card .sub{color:var(--muted);font-size:12px;margin-bottom:20px}
+.login-card .err{color:var(--danger);font-size:13px;min-height:18px;margin-bottom:8px}
+.login-card .btn{width:100%;margin-top:4px}
 </style>
 </head>
 <body>
 <div id="app"></div>
 <script>
-const API="";
-const CATS=[
-  {key:"inout",name:"出入库操作",color:"pink",icon:"入",desc:"扫码登记/归还",funcs:[
-    {key:"scan",name:"扫码出入库",desc:"扫码完成取用、出库、归还"},
-    {key:"receive",name:"入库登记",desc:"登记新溶液，自动生成瓶码并打印"},
-  ]},
-  {key:"query",name:"查询统计",color:"blue",icon:"查",desc:"库存/流水",funcs:[
-    {key:"stock",name:"库存查询",desc:"多条件查库存，补打标签/作废"},
-    {key:"logs",name:"流水台账",desc:"查询全部出入库流水并导出"},
-  ]},
-  {key:"check",name:"盘点管理",color:"green",icon:"盘",desc:"扫码盘点",funcs:[
-    {key:"stocktake",name:"扫码盘点",desc:"扫码盘库，自动生成差异报告"},
-  ]},
-  {key:"sys",name:"系统设置",color:"purple",icon:"置",desc:"参数配置",funcs:[
-    {key:"cfg",name:"参数设置",desc:"账号、瓶号规则、标签、库位等"},
-  ]},
+"use strict";
+/* ================= 常量 ================= */
+const APP_VERSION="3.0";
+const ICONS={
+  inout:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.3 7 12 12l8.7-5"/><path d="M12 22V12"/></svg>',
+  query:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>',
+  check:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="m9 14 2 2 4-4"/></svg>',
+  cfg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>'
+};
+/* 模块（Tab）定义：key 同时是权限码 */
+const TABS=[
+  {key:"inout",name:"出入库",funcs:[
+    {key:"scan",name:"扫码出入库"},
+    {key:"receive",name:"入库登记"}]},
+  {key:"query",name:"查询",funcs:[
+    {key:"stock",name:"库存查询"},
+    {key:"logs",name:"流水台账"}]},
+  {key:"check",name:"盘点",funcs:[
+    {key:"stocktake",name:"扫码盘点"}]},
+  {key:"cfg",name:"设置",funcs:[
+    {key:"settings",name:"参数设置"},
+    {key:"users",name:"账号管理",adminOnly:true},
+    {key:"boxes",name:"库位管理",adminOnly:true}]}
 ];
-let state={user:null,page:"login",subCat:null,func:null,token:false};
-let $app;
-function $(sel){return document.querySelector(sel)}
-function toast(msg){const t=document.createElement("div");t.className="toast";t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),1800)}
+const PERM_LABELS=[["inout","出入库"],["query","查询统计"],["check","盘点"],["cfg","系统设置"]];
+
+let state={user:null,role:null,perms:[],token:"",tab:"inout",func:"scan"};
+let activeView=null;
+let $app=null;
+
+/* ================= 工具 ================= */
+function el(tag,cls,html){const e=document.createElement(tag);if(cls)e.className=cls;
+  if(html!=null)e.innerHTML=html;return e}
+function q(box,sel){return box.querySelector(sel)}
+function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,
+  c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
+function toast(msg){const t=el("div","toast");t.textContent=msg;document.body.appendChild(t);
+  setTimeout(()=>t.remove(),1900)}
+function tagCls(s){return s==="在库"?"tag-in":s==="已出库"?"tag-out":
+  s==="已取用"?"tag-used":"tag-discard"}
+
+/* ================= API 层 =================
+   单版本：始终本地优先（XLBLocalApi → IndexedDB）；
+   写操作本地完成后由 syncNow 经 server_url 双向同步；
+   远程 fetch 一律带 Authorization: Bearer token。 */
 async function api(path,opt={}){
-  // 单机模式：所有接口走本地 Store（IndexedDB），彻底脱离电脑
   if(window.XLBLocalApi){
-    // 提取 query 参数传给本地适配层
-    const qIdx=path.indexOf("?");
-    let p=path, params={};
-    if(qIdx>=0){
-      p=path.slice(0,qIdx);
-      new URLSearchParams(path.slice(qIdx+1)).forEach((v,k)=>params["_"+k]=v);
+    const qi=path.indexOf("?");let p=path,params={};
+    if(qi>=0){
+      p=path.slice(0,qi);
+      new URLSearchParams(path.slice(qi+1)).forEach((v,k)=>params["_"+k]=v);
     }
-    try{
-      return await window.XLBLocalApi.localApi(p,{...opt,...params});
-    }catch(e){
-      // 本地不支持的接口（如导出 Excel）回退到远程
-      if(serverBase) return await _remoteApi(path,opt);
-      throw e;
-    }
+    return await XLBLocalApi.localApi(p,{...opt,...params});
   }
-  return await _remoteApi(path,opt);
+  return await remoteApi(path,opt);
 }
-async function _remoteApi(path,opt={}){
-  const r=await fetch(apiBase()+path,{headers:{"Content-Type":"application/json"},...opt});
+async function remoteApi(path,opt={}){
+  const h={"Content-Type":"application/json"};
+  if(state.token)h["Authorization"]="Bearer "+state.token;
+  const r=await fetch(path,{headers:h,...opt});
   const ct=r.headers.get("content-type")||"";
-  if(ct.includes("json")){const j=await r.json();if(!r.ok)throw new Error(j.msg||j.error||"请求失败");return j}
-  return r
+  if(ct.includes("json")){const j=await r.json();
+    if(!r.ok)throw new Error(j.msg||j.error||"请求失败");return j}
+  if(!r.ok)throw new Error("请求失败 HTTP "+r.status);
+  return r;
 }
-/* ---------- 服务端地址（原生 App 专用） ----------
-   浏览器同源访问 http://电脑IP:8765 时地址为空、用相对路径；
-   Capacitor 原生包页面在 https://localhost，必须由用户配置电脑服务端地址。
-   地址存于与 SW 共享的 IndexedDB(kv)，SW 据此把 /api 请求重写到真实服务端。 */
-let serverBase="";
-const SRV_KEY="server_base";
-const isNative=!!(window.Capacitor&&window.Capacitor.isNativePlatform&&window.Capacitor.isNativePlatform());
-function apiBase(){return serverBase||""}
-function normalizeServerInput(v){
-  let s=(v||"").trim().replace(/\/+$/,"");
-  if(!s)return "";
-  if(!/^https?:\/\//i.test(s))s="http://"+s;
-  return s;
+/* 写操作统一入口：成功即广播 data-changed（全局刷新 + 触发自动同步） */
+async function apiWrite(path,body){
+  const j=await api(path,{method:"POST",body:JSON.stringify(body||{})});
+  window.dispatchEvent(new Event("data-changed"));
+  return j;
 }
-async function loadServerBase(){
+async function apiDelete(path,body){
+  const j=await api(path,{method:"DELETE",body:JSON.stringify(body||{})});
+  window.dispatchEvent(new Event("data-changed"));
+  return j;
+}
+
+/* ================= 会话 ================= */
+const SESS_KEY="xlb_session_v3";
+function saveSession(s){try{localStorage.setItem(SESS_KEY,JSON.stringify(s))}catch(e){}}
+function loadSession(){try{return JSON.parse(localStorage.getItem(SESS_KEY))}catch(e){return null}}
+function clearSession(){try{localStorage.removeItem(SESS_KEY)}catch(e){}}
+
+const isNative=!!(window.Capacitor&&window.Capacitor.isNativePlatform&&
+  window.Capacitor.isNativePlatform());
+
+/* ================= 权限 ================= */
+function tabAllowed(key){return state.role==="admin"||state.perms.includes(key)}
+function visibleFuncs(tab){return tab.funcs.filter(f=>!f.adminOnly||state.role==="admin")}
+function firstAllowedTab(){const t=TABS.find(t=>tabAllowed(t.key));return t?t.key:null}
+function firstFuncKey(tabKey){
+  const t=TABS.find(t=>t.key===tabKey);const fs=visibleFuncs(t);
+  return fs.length?fs[0].key:null;
+}
+
+/* ================= 同步（syncNow） ================= */
+let _syncing=false,_syncTimer=null;
+async function doSync(manual){
+  if(_syncing)return{ok:false,msg:"正在同步中…"};
+  if(!navigator.onLine)return{ok:false,msg:"当前处于离线状态"};
+  if(!window.XLBLocalApi)return{ok:false,msg:"本地存储不可用"};
+  if(!window.__xlb_sync_cred)return{ok:false,msg:"请退出并重新登录后再同步"};
+  _syncing=true;updateNetUI();
   try{
-    const db=await secOpenDB();
-    const v=await secIDB(db,"readonly",os=>os.get(SRV_KEY));
-    serverBase=typeof v==="string"?v:"";
-  }catch(e){serverBase=""}
-}
-async function saveServerBase(v){
-  serverBase=normalizeServerInput(v);
-  const db=await secOpenDB();
-  await secIDB(db,"readwrite",os=>os.put(serverBase,SRV_KEY));
-  if(navigator.serviceWorker&&navigator.serviceWorker.controller){
-    navigator.serviceWorker.controller.postMessage({type:"SET_BASE",base:serverBase});
-  }
-}
-async function testServerBase(v){
-  const base=normalizeServerInput(v);
-  if(!base)throw new Error("请填写服务器地址");
-  const r=await fetch(base+"/api/info");
-  if(!r.ok)throw new Error("连接失败（HTTP "+r.status+"）");
-  return await r.json();
-}
-/* ---------- 本地数据加密层 ----------
-   AES-GCM 256（WebCrypto）；密钥生成后不可导出(extractable:false)，
-   以 CryptoKey 形式存入 IndexedDB，页面与 Service Worker 共用。
-   密文格式：
-     E1$<base64(IV)>.<base64(密文)>                 明文直接加密
-     E2$<base64(IV)>.<base64(密文)>                 gzip 压缩后再加密 */
-const SEC_PREFIX="E1$", SEC_PREFIX_C="E2$", SEC_DB="xlb-sec-v1", SEC_STORE="kv", SEC_KEYID="aesgcm256-v1";
-const cmpSupported=typeof CompressionStream!=="undefined"&&typeof DecompressionStream!=="undefined";
-function secOpenDB(){
-  return new Promise((res,rej)=>{
-    const r=indexedDB.open(SEC_DB,1);
-    r.onupgradeneeded=()=>r.result.createObjectStore(SEC_STORE);
-    r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error);
-  });
-}
-function secIDB(db,mode,fn){
-  return new Promise((res,rej)=>{
-    const tx=db.transaction(SEC_STORE,mode),os=tx.objectStore(SEC_STORE);
-    const rq=fn(os);rq.onsuccess=()=>res(rq.result);rq.onerror=()=>rej(rq.error);
-  });
-}
-async function secGetKey(){
-  const db=await secOpenDB();
-  const existed=await secIDB(db,"readonly",os=>os.get(SEC_KEYID));
-  if(existed)return existed;
-  const key=await crypto.subtle.generateKey({name:"AES-GCM",length:256},false,["encrypt","decrypt"]);
-  await secIDB(db,"readwrite",os=>os.put(key,SEC_KEYID));
-  return key;
-}
-function b64Encode(u8){
-  let bin="",CH=0x8000;
-  for(let i=0;i<u8.length;i+=CH){bin+=String.fromCharCode.apply(null,u8.subarray(i,i+CH))}
-  return btoa(bin);
-}
-function b64Decode(s){
-  const bin=atob(s),out=new Uint8Array(bin.length);
-  for(let i=0;i<bin.length;i++)out[i]=bin.charCodeAt(i);
-  return out;
-}
-async function gzipBytes(bytes){
-  if(!cmpSupported)return bytes;
-  const s=new Blob([bytes]).stream().pipeThrough(new CompressionStream("gzip"));
-  return new Uint8Array(await new Response(s).arrayBuffer());
-}
-async function gunzipBytes(bytes){
-  // gzip magic 1f 8b；无标记则视为未压缩（老环境 raw 回退数据）
-  if(!cmpSupported||bytes[0]!==0x1f||bytes[1]!==0x8b)return bytes;
-  const s=new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"));
-  return new Uint8Array(await new Response(s).arrayBuffer());
-}
-async function encToString(data,compress){
-  const key=await secGetKey();
-  const iv=crypto.getRandomValues(new Uint8Array(12));
-  let payload=new TextEncoder().encode(typeof data==="string"?data:JSON.stringify(data));
-  let prefix=SEC_PREFIX;
-  if(compress&&cmpSupported){const z=await gzipBytes(payload);if(z.length<payload.length){payload=z;prefix=SEC_PREFIX_C}}
-  const ct=await crypto.subtle.encrypt({name:"AES-GCM",iv},key,payload);
-  return prefix+b64Encode(iv)+"."+b64Encode(new Uint8Array(ct));
-}
-async function decFromString(str){
-  const compressed=str.startsWith(SEC_PREFIX_C);
-  const rawPrefix=compressed?SEC_PREFIX_C:SEC_PREFIX;
-  const body=str.slice(rawPrefix.length),dot=body.indexOf(".");
-  const iv=b64Decode(body.slice(0,dot));
-  const ct=b64Decode(body.slice(dot+1));
-  const key=await secGetKey();
-  let pt=await crypto.subtle.decrypt({name:"AES-GCM",iv},key,ct);
-  if(compressed)pt=await gunzipBytes(new Uint8Array(pt));
-  return new TextDecoder().decode(pt);
-}
-async function encJSON(data){return await encToString(JSON.stringify(data),true)}
-async function decJSON(str){return JSON.parse(await decFromString(str))}
-function isCipher(str){return typeof str==="string"&&(str.startsWith(SEC_PREFIX)||str.startsWith(SEC_PREFIX_C))}
-/* ---------- 离线缓存基础设施 ---------- */
-const SESS_KEY="xlb_session", QUEUE_KEY="xlb_offline_queue";
-let queueMem=[],sessMem=null;
-// 启动时加载并解密（自动迁移历史明文）
-async function initSecureStorage(){
-  // 会话
-  const rawS=localStorage.getItem(SESS_KEY);
-  if(rawS){
-    try{sessMem=isCipher(rawS)?await decFromString(rawS):rawS}
-    catch(e){sessMem=null}
-    if(!isCipher(rawS)&&sessMem)localStorage.setItem(SESS_KEY,await encToString(sessMem));
-  }
-  // 队列（明文 / 旧 E1$ 统一迁移为 E2$ 压缩密文）
-  const rawQ=localStorage.getItem(QUEUE_KEY);
-  if(rawQ){
-    try{queueMem=isCipher(rawQ)?await decJSON(rawQ):JSON.parse(rawQ)}
-    catch(e){queueMem=[]}
-    if(!rawQ.startsWith(SEC_PREFIX_C))localStorage.setItem(QUEUE_KEY,await encJSON(queueMem));
-  }
-}
-// 写操作统一入口：本地模式始终直连本地 Store；联网模式在线直连，离线入队
-async function apiWrite(path,body,label){
-  if(window.XLBLocalApi) return await api(path,{method:"POST",body:JSON.stringify(body)});
-  if(navigator.onLine)return await api(path,{method:"POST",body:JSON.stringify(body)});
-  const q=getQueue();q.push({path,body,label,ts:Date.now(),fails:0});await saveQueue(q);
-  toast("离线已记录："+label+"，联网后自动提交");
-  updateNetUI();
-  return {offline:true}
-}
-function getQueue(){return queueMem}
-async function saveQueue(q){queueMem=q;localStorage.setItem(QUEUE_KEY,await encJSON(q))}
-async function saveSession(u){sessMem=u;localStorage.setItem(SESS_KEY,await encToString(u))}
-function clearSession(){sessMem=null;localStorage.removeItem(SESS_KEY)}
-let flushing=false;
-async function flushQueue(){
-  if(flushing||!navigator.onLine)return;
-  const q=getQueue();if(!q.length){updateNetUI();return}
-  flushing=true;
-  let progress=0;
-  while(q.length){
-    const op=q[0];
-    try{
-      await api(op.path,{method:"POST",body:JSON.stringify(op.body)});
-      q.shift();await saveQueue(q);progress++;
-    }catch(e){
-      op.fails=(op.fails||0)+1;
-      const failed=q.shift();
-      if(op.fails<=3){q.push(failed)}else{toast("多次失败，已保留待手动处理："+op.label)}
-      await saveQueue(q);
-      if(q.length&&q.every(o=>(o.fails||0)>=4))break;
+    const r=await XLBLocalApi.syncNow();
+    if(r&&r.ok){
+      localStorage.setItem("xlb_last_ts",new Date().toLocaleString());
+      window.dispatchEvent(new Event("data-changed"));
     }
-  }
-  if(progress)toast("已同步 "+progress+" 条离线操作");
-  flushing=false;updateNetUI();
+    return r||{ok:false,msg:"同步失败"};
+  }catch(e){return{ok:false,msg:e.message}}
+  finally{_syncing=false;updateNetUI();}
 }
+function scheduleSync(){
+  clearTimeout(_syncTimer);
+  if(navigator.onLine&&window.XLBLocalApi&&XLBLocalApi.isDirty()&&window.__xlb_sync_cred){
+    _syncTimer=setTimeout(()=>doSync(false),3000);
+  }
+}
+window.addEventListener("data-changed",()=>{
+  if(activeView&&activeView.reload){
+    try{const r=activeView.reload();if(r&&r.catch)r.catch(()=>{})}catch(e){}
+  }
+  scheduleSync();
+});
+window.addEventListener("online",()=>{updateNetUI();doSync(false)});
+window.addEventListener("offline",()=>updateNetUI());
+setInterval(updateNetUI,5000);
+setInterval(()=>{if(window.XLBLocalApi&&XLBLocalApi.isDirty())doSync(false)},60000);
+
 function updateNetUI(){
-  const dot=$("#netdot");if(!dot)return;
-  const n=getQueue().length;
-  dot.className="net-dot "+(navigator.onLine?"online":"offline");
-  dot.title=navigator.onLine?(n?"在线 · 待同步 "+n+" 条":"在线 · 数据已同步"):"离线模式 · 待同步 "+n+" 条";
-  dot.innerHTML=navigator.onLine
-    ?`<span class="nd"></span>${n?`待同步 ${n} 条`:"在线"}`
-    :`<span class="nd"></span>离线${n?` · ${n} 条待同步`:""}`;
+  const dot=q($app,"#netdot");if(!dot)return;
+  const online=navigator.onLine,dirty=!!(window.XLBLocalApi&&XLBLocalApi.isDirty());
+  const last=localStorage.getItem("xlb_last_ts");
+  dot.className="net-dot "+(online?"online":"offline");
+  dot.innerHTML=online
+    ?(dirty?'<span class="nd"></span>待同步':'<span class="nd"></span>在线')
+    :'<span class="nd"></span>离线';
+  dot.title=last?("上次同步："+last):"尚未与服务器同步";
 }
-window.addEventListener("online",()=>{updateNetUI();toast("网络已恢复，正在同步…");flushQueue()});
-window.addEventListener("offline",()=>{updateNetUI();toast("已进入离线模式，可浏览缓存并记录操作")});
-function setPage(p){state.page=p;render()}
-function catOf(k){return CATS.find(c=>c.funcs.some(f=>f.key===k))}
-function crumb(){
-  if(state.page==="home")return "首页";
-  if(state.page==="sub")return `首页 › ${CATS.find(c=>c.key===state.subCat).name}`;
-  if(state.page==="func"){
-    const c=catOf(state.func);return `首页 › ${c.name} › ${c.funcs.find(f=>f.key===state.func).name}`
-  }
-  return ""
-}
-/* ---------- 渲染入口 ---------- */
+
+/* ================= 渲染入口 ================= */
 function render(){
   $app.innerHTML="";
-  if(state.page==="connect"){renderConnect();return}
-  if(state.page==="login"){renderLogin();return}
-  // 顶栏
-  const bar=document.createElement("div");bar.className="bar";
-  bar.innerHTML=`<div class="logo">小</div><div class="title">小笼包</div>
+  if(!state.user){renderLogin();return}
+  /* 顶栏 */
+  const bar=el("div","bar");
+  bar.innerHTML=`<div class="brand"><span class="logo">小</span>
+    <span class="title">小笼包<span class="ver">v${APP_VERSION}</span></span></div>
     <div class="net-dot" id="netdot"></div>
-    <div class="user">${state.user}</div><button id="logout">退出</button>`;
+    <div class="user-chip">${esc(state.user)}</div>
+    <button class="btn btn-sm secondary" id="logout">退出</button>`;
   $app.appendChild(bar);
-  $("#logout").onclick=()=>{state.user=null;state.token=false;clearSession();setPage("login")};
+  q(bar,"#logout").onclick=doLogout;
   updateNetUI();
-  // 面包屑
-  const cr=document.createElement("div");cr.className="crumb";
-  const parts=crumb().split("›");
-  cr.innerHTML=parts.map((p,i)=>{
-    const isLast=i===parts.length-1;
-    return isLast?`<span>${p.trim()}</span>`:`<span onclick="navCrumb(${i})">${p.trim()}</span> › `
-  }).join("");
-  $app.appendChild(cr);
-  const main=document.createElement("div");main.className="main";$app.appendChild(main);
-  if(state.page==="home")renderHome(main);
-  else if(state.page==="sub")renderSub(main);
-  else if(state.page==="func")renderFunc(main);
-}
-window.navCrumb=function(i){
-  if(state.page==="sub"||(state.page==="func"&&i===0))setPage("home");
-  else if(state.page==="func"&&i===1)setPage("sub");
-}
-/* ---------- 登录 ---------- */
-function renderConnect(){
-  const w=document.createElement("div");w.className="login-wrap";w.style.height="100%";
-  w.innerHTML=`<div class="logo-big">小</div><h1>连接服务器</h1>
-    <div class="sub">请输入电脑端小笼包服务地址</div>
-    <div class="err" id="cerr"></div>
-    <input id="csrv" placeholder="192.168.0.107:8765" autocomplete="off">
-    <button id="cbtn">测试并连接</button>
-    <div style="color:#999;font-size:12px;margin-top:12px;line-height:1.7">
-      1. 在电脑上启动「启动小笼包.bat」<br>
-      2. 平板与电脑连接同一 WiFi<br>
-      3. 填写电脑 IP 地址与端口（电脑端显示的访问地址）</div>`;
-  $app.appendChild(w);
-  $("#csrv").focus();
-  const doConnect=async()=>{
-    const v=$("#csrv").value;
-    try{
-      const info=await testServerBase(v);
-      await saveServerBase(v);
-      toast("连接成功："+(info.app_name||"")+" v"+info.version);
-      setPage("login");
-    }catch(e){$("#cerr").textContent=e.message}
-  };
-  $("#cbtn").onclick=doConnect;
-  $("#csrv").addEventListener("keydown",e=>{if(e.key==="Enter")doConnect()});
-}
-function renderLogin(){
-  const saved=sessMem;
-  const w=document.createElement("div");w.className="login-wrap";w.style.height="100%";
-  w.innerHTML=`<div class="logo-big">小</div><h1>小笼包</h1><div class="sub">标准溶液管理系统 · 平板版</div>
-    <div class="err" id="lerr"></div>
-    <input id="luser" placeholder="账号" autocomplete="off">
-    <input id="lpass" type="password" placeholder="密码">
-    <button id="lbtn">登 录</button>
-    <div class="offline-entry" id="offentry" style="${saved?"":"display:none"}">网络不可用？<a id="offbtn">离线进入，浏览缓存数据</a></div>`;
-  $app.appendChild(w);
-  $("#luser").focus();
-  const doLogin=async()=>{
-    try{
-      const j=await api("/api/login",{method:"POST",body:JSON.stringify({user:$("#luser").value,pass:$("#lpass").value})});
-      state.user=j.user;state.token=true;
-      await saveSession(j.user);
-      setPage("home");
-    }catch(e){$("#lerr").textContent=e.message}
-  };
-  $("#lbtn").onclick=doLogin;
-  $("#lpass").addEventListener("keydown",e=>{if(e.key==="Enter")doLogin()});
-  $("#offbtn").onclick=()=>{
-    if(!saved)return;
-    state.user=saved+"（离线）";state.token=false;setPage("home");
-    toast("离线模式：显示最近一次缓存数据")
-  };
-}
-/* ---------- 首页 ---------- */
-function renderHome(main){
-  const g=document.createElement("div");g.className="menu-grid";
-  CATS.forEach(c=>{
-    const d=document.createElement("div");d.className=`card ${c.color}`;
-    d.innerHTML=`<div class="ic">${c.icon}</div><h3>${c.name}</h3><p>${c.desc}</p>`;
-    d.onclick=()=>{state.subCat=c.key;setPage("sub")};
-    g.appendChild(d);
-  });
-  main.appendChild(g);
-}
-/* ---------- 分菜单 ---------- */
-function renderSub(main){
-  const c=CATS.find(x=>x.key===state.subCat);
-  const l=document.createElement("div");l.className="sub-list";
-  c.funcs.forEach(f=>{
-    const b=document.createElement("div");b.className="sub-btn";
-    b.innerHTML=`<div class="ic" style="background:var(--${c.color})">${f.name[0]}</div>
-      <div><div class="t">${f.name}</div><div class="d">${f.desc}</div></div>
-      <div class="arr">›</div>`;
-    b.onclick=()=>{state.func=f.key;setPage("func")};
-    l.appendChild(b);
-  });
-  main.appendChild(l);
-}
-/* ---------- 功能页分发 ---------- */
-function renderFunc(main){
-  const f=state.func;
-  if(f==="scan")renderScan(main);
-  else if(f==="receive")renderReceive(main);
-  else if(f==="stock")renderStock(main);
-  else if(f==="logs")renderLogs(main);
-  else if(f==="stocktake")renderStocktake(main);
-  else if(f==="cfg")renderCfg(main);
-}
-/* ---------- 扫码出入库 ---------- */
-function renderScan(main){
-  main.innerHTML=`<div class="scan-box">
-    <input id="scan" placeholder="将光标放此处，扫码枪扫描瓶码/品种码" autofocus>
-    <button class="btn btn-primary" id="scanbtn">查询</button></div>
-    <div id="scanresult"></div>`;
-  const inp=$("#scan");
-  const doScan=async()=>{
-    const code=inp.value.trim();if(!code)return;
-    try{
-      const j=await api("/api/scan",{method:"POST",body:JSON.stringify({code})});
-      showScanResult(j,code);
-    }catch(e){toast(e.message)}
-    inp.value="";inp.focus();
-  };
-  $("#scanbtn").onclick=doScan;
-  inp.addEventListener("keydown",e=>{if(e.key==="Enter")doScan()});
-  setTimeout(()=>inp.focus(),100);
-}
-function showScanResult(j,code){
-  const box=$("#scanresult");box.innerHTML="";
-  if(j.type==="product"){
-    const p=j.product;
-    box.innerHTML=`<div class="modal" style="max-width:90vw"><h3>品种码：${code}</h3>
-      <p>名称：${p.name}</p><p>标准物质编号：${p.std_id}</p>
-      <p>浓度：${p.conc} ${p.unit||""}</p><p>批号：${p.batch||""}</p>
-      <div class="row"><button class="btn btn-primary" onclick="goReceiveFromProduct('${p.name}','${p.std_id}','${p.conc}','${p.unit||""}','${p.batch||""}')">带入入库</button>
-      <button class="btn btn-gray" onclick="document.querySelector('#scanresult').innerHTML=''">关闭</button></div></div>`;
-  }else{
-    const it=j.item;
-    const st=it.status;let actions="";
-    if(st==="在库")actions=`<button class="btn btn-green" onclick="issueOne('${it.bottle_id}','use')">整瓶取用</button>
-      <button class="btn btn-blue" onclick="issueOne('${it.bottle_id}','out')">整瓶出库</button>`;
-    else if(st==="已出库"||st==="已取用")actions=`<button class="btn btn-green" onclick="returnOne('${it.bottle_id}')">归还入库</button>`;
-    else actions=`<span class="tag tag-discard">该瓶已作废</span>`;
-    box.innerHTML=`<div class="modal" style="max-width:90vw"><h3>${it.name}</h3>
-      <p>瓶号：${it.bottle_id}</p><p>浓度：${it.conc} ${it.unit||""}</p>
-      <p>批号：${it.batch}</p><p>库位：${it.location||"—"}</p>
-      <p>状态：<span class="tag ${tagCls(st)}">${st}</span></p>
-      <p>有效期至：${it.exp_date||""} ${it.open_exp_date?`(开封效期 ${it.open_exp_date})`:""}</p>
-      <div class="row">${actions}
-        <button class="btn btn-warn" onclick="reprint('${it.bottle_id}')">补打标签</button>
-        <button class="btn btn-gray" onclick="document.querySelector('#scanresult').innerHTML=''">关闭</button>
-      </div></div>`;
+  /* 主体 */
+  const main=el("div","main");$app.appendChild(main);
+  const tab=TABS.find(t=>t.key===state.tab);
+  const funcs=visibleFuncs(tab);
+  if(funcs.length>1){
+    const pills=el("div","pills");
+    funcs.forEach(f=>{
+      const p=el("button","pill"+(f.key===state.func?" active":""),f.name);
+      p.onclick=()=>{state.func=f.key;render()};
+      pills.appendChild(p);
+    });
+    main.appendChild(pills);
   }
+  const view=el("div");main.appendChild(view);
+  const vf=VIEWS[state.func];
+  const r=vf?vf(view):null;
+  activeView={el:view,reload:r&&typeof r.reload==="function"?r.reload:null};
+  /* 底部 Tab（权限过滤） */
+  const tb=el("div","tabbar");
+  TABS.filter(t=>tabAllowed(t.key)).forEach(t=>{
+    const b=el("button","tab"+(t.key===state.tab?" active":""),
+      ICONS[t.key]+`<span>${t.name}</span>`);
+    b.onclick=()=>{state.tab=t.key;state.func=firstFuncKey(t.key);render()};
+    tb.appendChild(b);
+  });
+  $app.appendChild(tb);
 }
-function tagCls(s){return s==="在库"?"tag-in":s==="已出库"?"tag-out":s==="已取用"?"tag-used":"tag-discard"}
-window.goReceiveFromProduct=function(name,std,conc,unit,batch){
-  state.func="receive";state._prefill={name,std_id:std,conc,unit,batch};render();
+
+function doLogout(){
+  state={user:null,role:null,perms:[],token:"",tab:"inout",func:"scan"};
+  if(window.XLBLocalApi)XLBLocalApi.setSession(null);
+  window.__xlb_sync_cred=null;
+  clearSession();
+  activeView=null;
+  render();
 }
-window.issueOne=async function(bid,action){
+
+/* ================= 登录 ================= */
+function renderLogin(){
+  const w=el("div","login-wrap");
+  w.innerHTML=`<div class="login-card">
+    <div class="logo-big">小</div>
+    <h1>标准溶液管理系统</h1>
+    <div class="sub">小笼包 v${APP_VERSION} · 本地优先 · 联网自动同步</div>
+    <div class="err" id="lerr"></div>
+    <input id="luser" placeholder="账号" autocomplete="off" autocapitalize="none">
+    <input id="lpass" type="password" placeholder="密码" style="margin-top:10px">
+    <button class="btn" id="lbtn">登 录</button>
+    <div class="hint" style="margin-top:14px">默认管理员账号 admin / 初始密码 admin123</div>
+  </div>`;
+  $app.appendChild(w);
+  q(w,"#luser").focus();
+  const doLogin=async()=>{
+    const user=q(w,"#luser").value.trim(),pass=q(w,"#lpass").value;
+    if(!user){q(w,"#lerr").textContent="请输入账号";return}
+    try{
+      const j=await api("/api/login",
+        {method:"POST",body:JSON.stringify({user,pass})});
+      state.user=j.user;state.role=j.role;state.perms=j.perms||[];state.token=j.token;
+      /* 同步凭据仅存内存，供 syncNow 向服务器换取 Bearer token */
+      window.__xlb_sync_cred={user:j.user,pass:pass};
+      if(window.XLBLocalApi)XLBLocalApi.setSession(
+        {user:j.user,role:j.role,perms:state.perms});
+      saveSession({user:j.user,role:j.role,perms:state.perms});
+      const tab=firstAllowedTab();
+      state.tab=tab||"inout";state.func=firstFuncKey(state.tab)||"scan";
+      render();
+      maybeDefaultServer();
+    }catch(e){q(w,"#lerr").textContent=e.message}
+  };
+  q(w,"#lbtn").onclick=doLogin;
+  q(w,"#lpass").addEventListener("keydown",e=>{if(e.key==="Enter")doLogin()});
+  q(w,"#luser").addEventListener("keydown",
+    e=>{if(e.key==="Enter")q(w,"#lpass").focus()});
+}
+/* 由服务器同源托管时，管理员登录后自动把当前站点作为同步服务器 */
+async function maybeDefaultServer(){
+  if(state.role!=="admin"||isNative)return;
+  if(!/^https?:/.test(location.origin))return;
   try{
-    const op=state.user.replace(/（离线）$/,"");
-    await apiWrite("/api/issue",{bottle_id:bid,action,operator:op},(action==="use"?"取用 ":"出库 ")+bid);
-    $("#scanresult").innerHTML="";
-  }catch(e){toast(e.message)}
-}
-window.returnOne=async function(bid){
-  const opened=confirm("归还时是否首次开封？");
-  try{
-    const op=state.user.replace(/（离线）$/,"");
-    await apiWrite("/api/return",{bottle_id:bid,opened,operator:op},"归还 "+bid);
-    $("#scanresult").innerHTML="";
-  }catch(e){toast(e.message)}
-}
-window.reprint=async function(bid){
-  try{
-    if(!navigator.onLine){
-      // 离线：用缓存的标签图片走浏览器打印
-      const j=await api(`/api/label_data/${bid}`);
-      if(j.image){printImage(j.image,1);toast("离线打印（使用缓存标签图）")}
-      else toast("离线且该标签无本地缓存")
-      return
+    const cfg=await api("/api/config");
+    if(!cfg.server_url){
+      await api("/api/config",
+        {method:"POST",body:JSON.stringify({server_url:location.origin})});
     }
-    const j=await api("/api/print",{method:"POST",body:JSON.stringify({bottle_id:bid,copies:1,mode:"auto"})});
-    if(j.mode==="browser")printImage(j.image,j.copies);
-    else toast("已发送至打印机："+j.printer);
+  }catch(e){}
+}
+
+/* ================= 页面：扫码出入库 ================= */
+function pageScan(box){
+  box.innerHTML=`<div class="searchbar">
+      <input id="f_scan" placeholder="扫码枪扫描瓶码 / 品种二维码" autocomplete="off">
+      <button class="btn" id="f_scanbtn">查询</button></div>
+    <div class="hint">在库瓶可整瓶取用 / 出库；已出库或已取用瓶扫码后直接归还入库。</div>
+    <div id="f_scanres"></div>`;
+  const inp=q(box,"#f_scan"),res=q(box,"#f_scanres");
+  async function run(){
+    const code=inp.value.trim();if(!code)return;
+    inp.value="";
+    try{
+      const j=await api("/api/scan",
+        {method:"POST",body:JSON.stringify({code})});
+      show(j);
+    }catch(e){toast(e.message)}
+    inp.focus();
+  }
+  q(box,"#f_scanbtn").onclick=run;
+  inp.addEventListener("keydown",e=>{if(e.key==="Enter")run()});
+  setTimeout(()=>inp.focus(),60);
+
+  function show(j){
+    res.innerHTML="";
+    if(j.type==="product"){
+      const p=j.product;
+      if(p){
+        const pan=el("div","panel",`<h3>品种档案：${esc(p.name)}</h3>
+          <div class="kv">
+            <span class="k">标准编号</span><span class="v">${esc(p.std_id)}</span>
+            <span class="k">浓度</span><span class="v">${esc(p.conc)} ${esc(p.unit)}</span>
+            <span class="k">批号</span><span class="v">${esc(p.batch)}</span>
+            <span class="k">首次入库</span><span class="v">${esc(p.first_date)}</span></div>
+          <div class="actions">
+            <button class="btn" id="goRecv">带入入库</button>
+            <button class="btn secondary" id="closeBtn">关闭</button></div>`);
+        res.appendChild(pan);
+        q(pan,"#goRecv").onclick=()=>{
+          state.prefill={std_id:p.std_id,conc:p.conc,unit:p.unit,batch:p.batch};
+          state.func="receive";render();
+        };
+        q(pan,"#closeBtn").onclick=()=>{res.innerHTML=""};
+      }else{
+        const o=j.qr||{};
+        const join=a=>Array.isArray(a)?a.join("、"):String(a||"");
+        const pan=el("div","panel",`<h3>品种二维码</h3>
+          <div class="hint" style="color:var(--warn)">本地尚未建立该品种档案（可能来自其他设备）</div>
+          <div class="kv">
+            <span class="k">溶液名称</span><span class="v">${esc(o["溶液名称"])}</span>
+            <span class="k">储存位置</span><span class="v">${esc(join(o["储存位置"])||"—")}</span>
+            <span class="k">剩余数量</span><span class="v">${o["剩余数量"]!=null?esc(o["剩余数量"]):"—"}</span>
+            <span class="k">项目号</span><span class="v">${esc(join(o["项目号"])||"—")}</span>
+            <span class="k">配置人</span><span class="v">${esc(o["配置人"])}</span>
+            <span class="k">生产日期</span><span class="v">${esc(o["生产日期"])}</span></div>
+          <div class="actions"><button class="btn secondary" id="closeBtn">关闭</button></div>`);
+        res.appendChild(pan);
+        q(pan,"#closeBtn").onclick=()=>{res.innerHTML=""};
+      }
+      return;
+    }
+    /* 瓶码 */
+    const it=j.item,st=it.status;
+    let actHtml="";
+    if(st==="在库"){
+      actHtml+=`<button class="btn" data-a="use">整瓶取用</button>
+        <button class="btn secondary" data-a="out">整瓶出库</button>`;
+    }else if(st==="已出库"||st==="已取用"){
+      actHtml+=`<button class="btn" data-a="return">归还入库</button>`;
+    }else{
+      actHtml+=`<span class="tag tag-discard">${esc(st)}</span>`;
+    }
+    actHtml+=`<button class="btn ghost" data-a="reprint">补打标签</button>
+      <button class="btn secondary" data-a="close">关闭</button>`;
+    const pan=el("div","panel",`<h3>${esc(it.name)}
+        <span class="tag ${tagCls(st)}">${esc(st)}</span></h3>
+      <div class="kv">
+        <span class="k">瓶号</span><span class="v">${esc(it.bottle_id)}</span>
+        <span class="k">浓度</span><span class="v">${esc(it.conc)} ${esc(it.unit)}</span>
+        <span class="k">批号</span><span class="v">${esc(it.batch)}</span>
+        <span class="k">库位</span><span class="v">${esc(it.location||"—")}</span>
+        <span class="k">有效期至</span><span class="v">${esc(it.exp_date)}${it.open_exp_date?`（开封效期 ${esc(it.open_exp_date)}）`:""}</span></div>
+      <div class="actions">${actHtml}</div>`);
+    res.appendChild(pan);
+    q(pan,".actions").addEventListener("click",async e=>{
+      const b=e.target.closest("button");if(!b)return;
+      const a=b.dataset.a;
+      try{
+        if(a==="close"){res.innerHTML="";return}
+        if(a==="use"||a==="out"){
+          await apiWrite("/api/issue",
+            {bottle_id:it.bottle_id,action:a,operator:state.user});
+          res.innerHTML="";toast(a==="use"?"已整瓶取用":"已整瓶出库");
+        }else if(a==="return"){
+          const opened=confirm("归还时是否首次开封？");
+          await apiWrite("/api/return",
+            {bottle_id:it.bottle_id,opened:!!opened,operator:state.user});
+          res.innerHTML="";toast("归还入库成功");
+        }else if(a==="reprint"){
+          await doReprint(it.bottle_id);
+        }
+      }catch(err){toast(err.message)}
+    });
+  }
+  return{reload(){}};
+}
+
+/* 补打标签：本地渲染瓶签 dataURL → 新窗口打印 */
+async function doReprint(bid){
+  try{
+    const j=await api("/api/label_data/"+encodeURIComponent(bid));
+    if(j&&j.image){printImages([j.image])}else toast("未取得标签图片");
   }catch(e){toast(e.message)}
 }
-function printImage(dataUrl,copies){
+function printImages(urls){
   const w=window.open("","_blank");
   if(!w){toast("请允许弹出窗口以打印");return}
-  let html=`<html><head><title>打印标签</title></head><body style="margin:0;text-align:center">`;
-  for(let i=0;i<copies;i++)html+=`<img src="${dataUrl}" style="max-width:100%"><br>`;
-  html+=`<script>window.onload=()=>{window.print();setTimeout(()=>window.close(),500)}<\/script></body></html>`;
+  let html=`<html><head><title>打印标签</title>
+    <style>@media print{.pg{page-break-after:always}}.pg{text-align:center;margin:0}
+    img{max-width:100%}</style></head><body style="margin:8px">`;
+  urls.forEach(u=>{html+=`<div class="pg"><img src="${u}"></div>`});
+  html+=`<script>window.onload=function(){window.print();setTimeout(function(){window.close()},400)};<\/script></body></html>`;
   w.document.write(html);w.document.close();
 }
-/* ---------- 入库登记 ---------- */
-let recvSelLocs=[];
-function renderReceive(main){
-  const f=state._prefill||{};delete state._prefill;
-  main.innerHTML=`<div id="recform"></div>`;
-  buildRecvForm(main.querySelector("#recform"),f);
+
+/* ================= 页面：入库登记 ================= */
+let _locData=null;          // /api/locations 缓存
+let _selectedLocs=[];       // 已选库位
+async function loadLocData(force){
+  if(!force&&_locData)return _locData;
+  _locData=await api("/api/locations");
+  return _locData;
 }
-async function buildRecvForm(box,f){
+function pageReceive(box){
+  const pf=state.prefill||{};delete state.prefill;
+  _selectedLocs=[];
+  box.innerHTML=`<div class="panel"><h3>入库登记</h3><div id="recv_form">
+      <div class="hint">加载中…</div></div></div>`;
+  buildForm(q(box,"#recv_form"),pf);
+  return{reload(){}};
+}
+async function buildForm(box,f){
   const cfg=await api("/api/config");
-  const persons=(cfg.persons||"").split("\n").filter(Boolean);
   const units=(cfg.units||"mL\nL\ng\nmg").split("\n").filter(Boolean);
-  const uses=(cfg.uses||"").split("\n").filter(Boolean);
-  const sols=(cfg.solvents||"").split("\n").filter(Boolean);
-  const projs=(cfg.project_nos||"").split("\n").filter(Boolean);
-  box.innerHTML=`<h3>入库登记</h3>
-    <div class="form-row"><label>溶液名称</label><input id="r_name" value="${f.name||""}"></div>
-    <div class="form-row"><label>标准物质编号</label><input id="r_std" value="${f.std_id||""}"></div>
-    <div class="form-row"><label>浓度</label><input id="r_conc" value="${f.conc||""}" placeholder="如 0.1000 mol/L"></div>
-    <div class="form-row"><label>单位</label><select id="r_unit">${units.map(u=>`<option ${u===(f.unit||"mL")?"selected":""}>${u}</option>`).join("")}</select></div>
-    <div class="form-row"><label>批号(4位数字)</label><input id="r_batch" value="${f.batch||""}" maxlength="4"></div>
-    <div class="form-row"><label>配置人</label><input id="r_maker" list="persons"></div>
-    <div class="form-row"><label>生产日期</label><input id="r_prod" type="date"></div>
-    <div class="form-row"><label>有效期至</label><input id="r_exp" type="date" placeholder="不填则按浓度推算"></div>
-    <div class="form-row"><label>规格</label><input id="r_init" type="number" step="0.01" placeholder="如 500"></div>
-    <div class="form-row"><label>开封后效期</label><input id="r_olv" type="number" placeholder="如 30" style="width:80px">
-      <select id="r_olu"><option>天</option><option>月</option></select></div>
-    <div class="form-row"><label>库位</label><div style="flex:1" id="locpicker"></div></div>
-    <div class="form-row"><label>入库数量</label><input id="r_qty" type="number" value="1" min="1" max="999"></div>
-    <div class="form-row"><label>经办人</label><input id="r_op" value="${cfg.default_operator||""}" list="persons"></div>
-    <div class="form-row"><label>项目编号</label><input id="r_proj" list="projs"></div>
-    <div class="form-row"><label>溶剂</label><input id="r_sol" list="sols"></div>
-    <div class="form-row"><label>备注</label><textarea id="r_note"></textarea></div>
-    <div style="display:flex;gap:8px;margin-top:14px">
-      <button class="btn btn-green" id="saveprint">保存并打印标签</button>
-      <button class="btn btn-primary" id="saveonly">仅保存</button>
+  box.innerHTML=`
+    <label class="fld"><span>溶液名称（自动生成）</span>
+      <input id="r_name" readonly placeholder="填写编号/浓度/批号后自动生成"></label>
+    <div class="grid2">
+      <label class="fld"><span>标准物质编号 *</span><input id="r_std" value="${esc(f.std_id||"")}"></label>
+      <label class="fld"><span>浓度/规格 *</span><input id="r_conc" value="${esc(f.conc||"")}" placeholder="如 0.1000 mol/L"></label>
     </div>
-    <datalist id="persons">${persons.map(p=>`<option value="${p}">`).join("")}</datalist>
-    <datalist id="projs">${projs.map(p=>`<option value="${p}">`).join("")}</datalist>
-    <datalist id="sols">${sols.map(p=>`<option value="${p}">`).join("")}</datalist>`;
-  recvSelLocs=[];
-  await drawBoard($("#locpicker"));
+    <div class="grid2">
+      <label class="fld"><span>单位</span><select id="r_unit">
+        ${units.map(u=>`<option ${u===(f.unit||"mL")?"selected":""}>${esc(u)}</option>`).join("")}</select></label>
+      <label class="fld"><span>批号（4 位数字）*</span><input id="r_batch" value="${esc(f.batch||"")}" maxlength="4"></label>
+    </div>
+    <div class="grid2">
+      <label class="fld"><span>配置人</span><input id="r_maker"></label>
+      <label class="fld"><span>生产日期</span><input id="r_prod" type="date"></label>
+    </div>
+    <div class="grid2">
+      <label class="fld"><span>有效期至</span><input id="r_exp" type="date"></label>
+      <label class="fld"><span>规格(mL/g)</span><input id="r_init" type="number" step="0.01" placeholder="如 500"></label>
+    </div>
+    <label class="fld"><span>开封后效期</span><span class="inline">
+      <input id="r_olv" type="number" placeholder="如 30" style="flex:1">
+      <select id="r_olu" style="width:90px"><option>天</option><option>月</option></select></span></label>
+    <label class="fld"><span>库位（先选盒，再点击圆形位点，可多选）</span>
+      <select id="r_boxsel"></select>
+      <div class="board-wrap"><div class="board" id="r_board"></div></div></label>
+    <div class="grid2">
+      <label class="fld"><span>入库数量</span><input id="r_qty" type="number" value="1" min="1" max="999"></label>
+      <label class="fld"><span>经办人</span><input id="r_op" value="${esc(cfg.default_operator||"")}"></label>
+    </div>
+    <div class="grid2">
+      <label class="fld"><span>项目编号</span><input id="r_proj"></label>
+      <label class="fld"><span>溶剂</span><input id="r_sol"></label>
+    </div>
+    <label class="fld"><span>备注</span><textarea id="r_note"></textarea></label>
+    <div class="actions">
+      <button class="btn" id="saveprint">保存并打印标签</button>
+      <button class="btn secondary" id="saveonly">仅保存</button></div>`;
+
+  /* 名称派生 */
+  const syncName=()=>{
+    q(box,"#r_name").value=XLBStore.deriveName(
+      q(box,"#r_std").value,q(box,"#r_conc").value,
+      q(box,"#r_unit").value,q(box,"#r_batch").value);
+  };
+  ["r_std","r_conc","r_batch"].forEach(id=>q(box,"#"+id).addEventListener("input",syncName));
+  q(box,"#r_unit").addEventListener("change",syncName);
+  syncName();
+
+  /* 盒下拉 + 圆形棋盘 */
+  const data=await loadLocData(true);
+  const sel=q(box,"#r_boxsel");
+  sel.innerHTML=data.boxes.map(b=>`<option value="${b.prefix}">${esc(b.label)}（${b.rows}×${b.cols}）</option>`).join("");
+  const drawBoard=()=>{
+    const prefix=sel.value;
+    const b=data.boxes.find(x=>x.prefix===prefix);
+    const board=q(box,"#r_board");
+    board.innerHTML="";
+    board.style.setProperty("--cols",b.cols);
+    const occ=new Set(data.occupied);
+    for(let s=1;s<=b.slots;s++){
+      const loc=prefix+s;
+      const btn=el("button","slot"+(occ.has(loc)?" occ":"")+
+        (_selectedLocs.includes(loc)?" sel":""),String(s));
+      btn.onclick=()=>{
+        if(btn.classList.contains("occ"))return;
+        btn.classList.toggle("sel");
+        if(btn.classList.contains("sel"))_selectedLocs.push(loc);
+        else _selectedLocs=_selectedLocs.filter(l=>l!==loc);
+      };
+      board.appendChild(btn);
+    }
+  };
+  sel.addEventListener("change",drawBoard);
+  drawBoard();
+
+  /* 保存 */
   const doSave=async(printAfter)=>{
+    const stdV=q(box,"#r_std").value.trim(),
+      concV=q(box,"#r_conc").value.trim(),
+      batchV=q(box,"#r_batch").value.trim();
+    if(!stdV){toast("请填写标准物质编号");return}
+    if(!concV){toast("请填写浓度/规格");return}
+    if(!batchV){toast("请填写批号");return}
+    if(!/^\d{4}$/.test(batchV)){toast("批号必须为 4 位数字（如 0001）");return}
     const form={
-      name:$("#r_name").value.trim(),std_id:$("#r_std").value.trim(),
-      conc:$("#r_conc").value.trim(),unit:$("#r_unit").value,
-      batch:$("#r_batch").value.trim(),maker:$("#r_maker").value.trim(),
-      prod_date:$("#r_prod").value,exp_date:$("#r_exp").value,
-      init_amount:$("#r_init").value,
-      open_limit_value:$("#r_olv").value,open_limit_unit:$("#r_olu").value,
-      location:recvSelLocs.join(","),operator:$("#r_op").value.trim(),
-      project_no:$("#r_proj").value.trim(),solvent:$("#r_sol").value.trim(),
-      note:$("#r_note").value.trim(),
-    };
-    const qty=parseInt($("#r_qty").value)||1;
+      name:q(box,"#r_name").value.trim(),std_id:stdV,conc:concV,
+      unit:q(box,"#r_unit").value,batch:batchV,
+      maker:q(box,"#r_maker").value.trim(),
+      prod_date:q(box,"#r_prod").value,exp_date:q(box,"#r_exp").value,
+      init_amount:q(box,"#r_init").value,
+      open_limit_value:q(box,"#r_olv").value,
+      open_limit_unit:q(box,"#r_olu").value,
+      location:_selectedLocs.join(","),
+      operator:q(box,"#r_op").value.trim(),
+      project_no:q(box,"#r_proj").value.trim(),
+      solvent:q(box,"#r_sol").value.trim(),
+      note:q(box,"#r_note").value.trim()};
+    const qty=parseInt(q(box,"#r_qty").value)||1;
     try{
-      const j=await apiWrite("/api/receive",{...form,qty},"入库 "+(form.name||"未命名")+" x"+qty);
-      if(j.offline){
-        // 离线：无瓶号，无法打印标签，同步后可在库存查询中补打
-        recvSelLocs=[];buildRecvForm(box,{});
-        return
-      }
+      const j=await apiWrite("/api/receive",{...form,qty});
       toast(`入库成功：${j.bottle_ids.length} 瓶`);
       if(printAfter){
+        const images=[];
+        try{
+          const c2=await api("/api/config");
+          const payload=await api("/api/product_qr?code="+
+            encodeURIComponent(j.product_code));
+          images.push(XLBLabel.renderProductQR(payload,c2));
+        }catch(e){}
         for(const bid of j.bottle_ids){
-          try{const p=await api("/api/print",{method:"POST",body:JSON.stringify({bottle_id:bid,copies:1,mode:"auto"})});
-            if(p.mode==="browser")printImage(p.image,p.copies)}catch(e){}
+          try{
+            const d=await api("/api/label_data/"+encodeURIComponent(bid));
+            if(d.image)images.push(d.image);
+          }catch(e){}
         }
+        if(images.length)printImages(images);
       }
-      recvSelLocs=[];buildRecvForm(box,{});
+      _selectedLocs=[];
+      buildForm(box,{});
     }catch(e){toast(e.message)}
   };
-  $("#saveprint").onclick=()=>doSave(true);
-  $("#saveonly").onclick=()=>doSave(false);
+  q(box,"#saveprint").onclick=()=>doSave(true);
+  q(box,"#saveonly").onclick=()=>doSave(false);
 }
-async function drawBoard(container){
-  const locs=await api("/api/locations");
-  const small=locs.small_box,grid=locs.small_box_grid;
-  const occ=new Set(locs.occupied);
-  container.innerHTML=`<div style="font-size:12px;color:#999;margin-bottom:4px">点击空闲格选择（嫩绿=空闲，灰=占用，粉=已选）</div>
-    <div class="board" id="brd" style="grid-template-columns:repeat(${grid},1fr)"></div>`;
-  const bd=$("#brd");
-  for(let i=1;i<=small;i++){
-    const loc=i+"-"+String.fromCharCode(64+(i%grid||grid));
-    const cell=document.createElement("div");cell.className="cell"+(occ.has(loc)?" occ":"");
-    cell.textContent=loc;cell.dataset.loc=loc;
-    cell.onclick=()=>{
-      if(cell.classList.contains("occ"))return;
-      cell.classList.toggle("sel");
-      if(cell.classList.contains("sel"))recvSelLocs.push(loc);
-      else recvSelLocs=recvSelLocs.filter(l=>l!==loc);
-    };
-    bd.appendChild(cell);
+
+/* ================= 页面：库存查询（弹窗双码） ================= */
+function pageStock(box){
+  box.innerHTML=`<div class="searchbar">
+      <input id="f_sq" placeholder="瓶号 / 名称 / 编号 / 库位">
+      <select id="f_sst" style="width:104px">
+        <option value="">全部状态</option>
+        <option value="在库">在库</option>
+        <option value="已取用">已取用</option>
+        <option value="已出库">已出库</option>
+        <option value="已作废">已作废</option></select>
+      <button class="btn" id="f_sbtn">查询</button></div>
+    <div class="hint">点击任意一行查看详情：弹窗同时显示品种二维码与瓶码条形码。</div>
+    <div class="tbl-wrap" id="f_sres"></div>`;
+  async function load(){
+    const kw=q(box,"#f_sq").value,s=q(box,"#f_sst").value;
+    const items=await api("/api/items?q="+encodeURIComponent(kw)+
+      "&status="+encodeURIComponent(s));
+    const wrap=q(box,"#f_sres");
+    if(!items.length){
+      wrap.innerHTML=`<div class="hint" style="text-align:center;padding:18px">无匹配数据</div>`;
+      return;
+    }
+    const tb=el("table","tbl",`<thead><tr>
+      <th>瓶号</th><th>名称</th><th>浓度</th><th>批号</th>
+      <th>库位</th><th>状态</th><th>有效期</th><th>操作</th>
+      </tr></thead><tbody></tbody>`);
+    const tbod=q(tb,"tbody");
+    items.forEach(it=>{
+      const tr=el("tr","rw",`<td>${esc(it.bottle_id)}</td>
+        <td>${esc(it.name)}</td>
+        <td>${esc(it.conc||"")} ${esc(it.unit||"")}</td>
+        <td>${esc(it.batch||"")}</td>
+        <td>${esc(it.location||"")}</td>
+        <td><span class="tag ${tagCls(it.status)}">${esc(it.status)}</span></td>
+        <td>${esc(it.exp_date||"")}</td>
+        <td><button class="btn mini secondary" data-op="reprint">补打</button>
+          <button class="btn mini danger" data-op="discard">作废</button></td>`);
+      tr.addEventListener("click",e=>{
+        if(e.target.closest("button"))return;
+        openItemModal(it);
+      });
+      q(tr,"[data-op=reprint]").addEventListener("click",
+        e=>{e.stopPropagation();doReprint(it.bottle_id)});
+      q(tr,"[data-op=discard]").addEventListener("click",async e=>{
+        e.stopPropagation();
+        const reason=prompt("作废原因：")||"";
+        if(!reason){toast("需填写作废原因");return}
+        try{
+          await apiWrite("/api/discard",
+            {bottle_id:it.bottle_id,reason,operator:state.user});
+          toast("已作废");
+        }catch(err){toast(err.message)}
+      });
+      tbod.appendChild(tr);
+    });
+    wrap.innerHTML="";wrap.appendChild(tb);
   }
-}
-/* ---------- 库存查询 ---------- */
-function renderStock(main){
-  main.innerHTML=`<div class="scan-box"><input id="sq" placeholder="瓶号/名称/编号/库位">
-    <select id="sst" style="padding:12px;border-radius:10px"><option value="">全部状态</option>
-    <option value="在库">在库</option><option value="已取用">已取用</option><option value="已出库">已出库</option><option value="已作废">已作废</option></select>
-    <button class="btn btn-primary" id="sbtn">查询</button></div>
-    <div class="tbl-wrap" id="sres"></div>`;
-  const load=async()=>{
-    const q=$("#sq").value,s=$("#sst").value;
-    const items=await api(`/api/items?q=${encodeURIComponent(q)}&status=${encodeURIComponent(s)}`);
-    const tb=`<table class="tbl"><thead><tr><th>瓶号</th><th>名称</th><th>浓度</th><th>批号</th><th>库位</th><th>状态</th><th>有效期</th><th>操作</th></tr></thead><tbody>
-      ${items.map(it=>`<tr><td>${it.bottle_id}</td><td>${it.name}</td><td>${it.conc||""} ${it.unit||""}</td>
-      <td>${it.batch||""}</td><td>${it.location||""}</td><td><span class="tag ${tagCls(it.status)}">${it.status}</span></td>
-      <td>${it.exp_date||""}</td>
-      <td><button class="btn btn-warn" style="padding:4px 8px;font-size:12px" onclick="reprint('${it.bottle_id}')">补打</button>
-      <button class="btn btn-danger" style="padding:4px 8px;font-size:12px" onclick="discardIt('${it.bottle_id}')">作废</button></td></tr>`).join("")}
-      </tbody></table>`;
-    $("#sres").innerHTML=items.length?tb:"<p style='text-align:center;color:#999;padding:20px'>无数据</p>";
-  };
-  $("#sbtn").onclick=load;$("#sq").addEventListener("keydown",e=>{if(e.key==="Enter")load()});
+  q(box,"#f_sbtn").onclick=load;
+  q(box,"#f_sq").addEventListener("keydown",e=>{if(e.key==="Enter")load()});
   load();
+  return{reload:load};
 }
-window.discardIt=async function(bid){
-  const reason=prompt("作废原因：")||"";
-  if(reason===""){toast("需填写原因");return}
-  try{
-    const op=state.user.replace(/（离线）$/,"");
-    await apiWrite("/api/discard",{bottle_id:bid,reason,operator:op},"作废 "+bid);
-    renderStock(document.querySelector(".main"))
-  }
-  catch(e){toast(e.message)}
-}
-/* ---------- 流水台账 ---------- */
-function renderLogs(main){
-  main.innerHTML=`<div class="scan-box"><input id="lq" placeholder="瓶号/名称/操作人">
-    <input id="ldays" type="number" placeholder="最近N天" style="width:100px;padding:12px;border-radius:10px">
-    <button class="btn btn-primary" id="lbtn">查询</button>
-    <button class="btn btn-blue" id="lexp">导出Excel</button></div>
-    <div class="tbl-wrap" id="lres"></div>`;
-  const load=async()=>{
-    const q=$("#lq").value,d=$("#ldays").value;
-    let url="/api/logs?";if(q)url+="q="+encodeURIComponent(q)+"&";if(d)url+="days="+d;
-    const logs=await api(url);
-    const tb=`<table class="tbl"><thead><tr><th>时间</th><th>瓶号</th><th>名称</th><th>操作</th><th>操作人</th><th>备注</th></tr></thead><tbody>
-      ${logs.map(l=>`<tr><td>${l.time||""}</td><td>${l.bottle_id||""}</td><td>${l.name||""}</td>
-      <td>${l.action||""}</td><td>${l.operator||""}</td><td>${l.note||""}</td></tr>`).join("")}
-      </tbody></table>`;
-    $("#lres").innerHTML=logs.length?tb:"<p style='text-align:center;color:#999;padding:20px'>无数据</p>";
+
+/* 库存详情弹窗：品种二维码 + 瓶码条形码（双码） */
+function openItemModal(it){
+  const mask=el("div","mask");
+  const m=el("div","modal",`<h3>${esc(it.name)}
+      <span class="tag ${tagCls(it.status)}">${esc(it.status)}</span></h3>
+    <div class="kv">
+      <span class="k">瓶号</span><span class="v">${esc(it.bottle_id)}</span>
+      <span class="k">标准编号</span><span class="v">${esc(it.std_id)}</span>
+      <span class="k">品种码</span><span class="v">${esc(it.product_code)}</span>
+      <span class="k">浓度</span><span class="v">${esc(it.conc)} ${esc(it.unit)}</span>
+      <span class="k">批号</span><span class="v">${esc(it.batch)}</span>
+      <span class="k">库位</span><span class="v">${esc(it.location||"—")}</span>
+      <span class="k">生产日期</span><span class="v">${esc(it.prod_date)}</span>
+      <span class="k">有效期至</span><span class="v">${esc(it.exp_date)}</span>
+      <span class="k">开封信息</span><span class="v">${it.open_date?esc(it.open_date)+" → "+esc(it.open_exp_date):"未开封"}</span>
+      <span class="k">规格</span><span class="v">${it.init_amount!=null?esc(it.init_amount)+" "+esc(it.unit):"—"}</span>
+      <span class="k">经办人</span><span class="v">${esc(it.operator)}</span>
+      <span class="k">项目编号</span><span class="v">${esc(it.project_no)||"—"}</span>
+      <span class="k">溶剂</span><span class="v">${esc(it.solvent)||"—"}</span>
+      <span class="k">备注</span><span class="v">${esc(it.note)||"—"}</span></div>
+    <div class="dual">
+      <div class="codebox"><div class="cap">品种二维码</div><div id="dq_qr"><span class="pending">生成中…</span></div></div>
+      <div class="codebox"><div class="cap">瓶码条形码</div><div id="dq_bar"><span class="pending">生成中…</span></div></div>
+    </div>
+    <div class="actions">
+      <button class="btn" id="dq_reprint">补打标签</button>
+      ${it.status==="在库"?'<button class="btn danger" id="dq_discard">作废</button>':""}
+      <button class="btn secondary" id="dq_close">关闭</button></div>`);
+  mask.appendChild(m);document.body.appendChild(mask);
+  mask.addEventListener("click",e=>{if(e.target===mask)mask.remove()});
+  q(m,"#dq_close").onclick=()=>mask.remove();
+  q(m,"#dq_reprint").onclick=()=>doReprint(it.bottle_id);
+  const discardBtn=q(m,"#dq_discard");
+  if(discardBtn)discardBtn.onclick=async()=>{
+    const reason=prompt("作废原因：")||"";
+    if(!reason){toast("需填写作废原因");return}
+    try{
+      await apiWrite("/api/discard",
+        {bottle_id:it.bottle_id,reason,operator:state.user});
+      mask.remove();toast("已作废");
+    }catch(e){toast(e.message)}
   };
-  $("#lbtn").onclick=load;$("#lq").addEventListener("keydown",e=>{if(e.key==="Enter")load()});
-  $("#lexp").onclick=async()=>{
-    // 单机模式：前端生成 CSV 下载；联网模式可走服务端 Excel
+  /* 异步渲染双码 */
+  (async()=>{
+    const qrBox=q(m,"#dq_qr");
+    if(!it.product_code){qrBox.innerHTML='<span class="pending">无品种码</span>';return}
+    try{
+      const cfg=await api("/api/config");
+      const payload=await api("/api/product_qr?code="+
+        encodeURIComponent(it.product_code));
+      qrBox.innerHTML=`<img src="${XLBLabel.renderProductQR(payload,cfg)}">`;
+    }catch(e){qrBox.innerHTML='<span class="pending">品种二维码生成失败</span>'}
+  })();
+  (async()=>{
+    const barBox=q(m,"#dq_bar");
+    try{
+      const d=await api("/api/label_data/"+encodeURIComponent(it.bottle_id));
+      barBox.innerHTML=`<img src="${d.image}">`;
+    }catch(e){barBox.innerHTML='<span class="pending">瓶码生成失败</span>'}
+  })();
+}
+
+/* ================= 页面：流水台账 ================= */
+function pageLogs(box){
+  box.innerHTML=`<div class="searchbar">
+      <input id="f_lq" placeholder="瓶号 / 名称 / 操作人">
+      <input id="f_ldays" type="number" placeholder="最近N天" style="width:100px">
+      <button class="btn" id="f_lbtn">查询</button>
+      <button class="btn secondary" id="f_lexp">导出CSV</button></div>
+    <div class="tbl-wrap" id="f_lres" style="margin-top:10px"></div>`;
+  async function load(){
+    const kw=q(box,"#f_lq").value,d=q(box,"#f_ldays").value;
+    let url="/api/logs?";
+    if(kw)url+="q="+encodeURIComponent(kw)+"&";
+    if(d)url+="days="+encodeURIComponent(d);
+    const logs=await api(url);
+    const wrap=q(box,"#f_lres");
+    if(!logs.length){
+      wrap.innerHTML=`<div class="hint" style="text-align:center;padding:18px">无数据</div>`;
+      return;
+    }
+    wrap.innerHTML="";
+    const tb=el("table","tbl",`<thead><tr>
+      <th>时间</th><th>瓶号</th><th>名称</th><th>操作</th>
+      <th>操作人</th><th>备注</th></tr></thead><tbody>
+      ${logs.map(l=>`<tr><td>${esc(l.time)}</td><td>${esc(l.bottle_id)}</td>
+      <td>${esc(l.name)}</td><td>${esc(l.action)}</td>
+      <td>${esc(l.operator)}</td><td>${esc(l.note)}</td></tr>`).join("")}
+      </tbody>`);
+    wrap.appendChild(tb);
+  }
+  q(box,"#f_lbtn").onclick=load;
+  q(box,"#f_lq").addEventListener("keydown",e=>{if(e.key==="Enter")load()});
+  q(box,"#f_lexp").onclick=async()=>{
     const logs=await api("/api/logs");
     if(!logs.length){toast("无数据可导出");return}
     const headers=["流水号","时间","瓶号","溶液名称","操作类型","数量","单位","领用人","用途","经办人","备注"];
     const keys=["log_id","time","bottle_id","name","action","qty","unit","person","purpose","operator","note"];
     let csv="\uFEFF"+headers.join(",")+"\n";
-    for(const l of logs){ csv+=keys.map(k=>`"${String(l[k]||"").replace(/"/g,'""')}"`).join(",")+"\n"; }
+    for(const l of logs){
+      csv+=keys.map(k=>`"${String(l[k]||"").replace(/"/g,'""')}"`).join(",")+"\n";
+    }
     const blob=new Blob([csv],{type:"text/csv;charset=utf-8"});
     const a=document.createElement("a");
     a.href=URL.createObjectURL(blob);
@@ -715,247 +852,349 @@ function renderLogs(main){
     a.click();
   };
   load();
+  return{reload:load};
 }
-/* ---------- 扫码盘点 ---------- */
-let stScope=[],stFound=[];
-function renderStocktake(main){
-  main.innerHTML=`<div class="scan-box"><input id="tscan" placeholder="扫描库位瓶码" autofocus>
-    <button class="btn btn-primary" id="tbtn">盘点</button></div>
-    <div id="tstat" style="margin-bottom:10px"></div>
-    <div id="tresult"></div>
-    <button class="btn btn-green" id="tstart">开始盘点（在库）</button>
-    <button class="btn btn-blue" id="trep" style="margin-left:8px">生成差异报告</button>`;
-  $("#tstart").onclick=async()=>{
-    const j=await api("/api/stocktake/start",{method:"POST",body:JSON.stringify({scope:"in"})});
-    stScope=j.scope;stFound=[];$("#tresult").innerHTML="";updStat();
-    toast(`盘点开始：共 ${j.count} 瓶在库`);$("#tscan").focus();
+
+/* ================= 页面：扫码盘点 ================= */
+function pageStocktake(box){
+  let scope=[],found=[];
+  box.innerHTML=`<div class="panel">
+      <div class="actions" style="margin-top:0">
+        <button class="btn" id="t_start">开始盘点（全部在库）</button>
+        <button class="btn secondary" id="t_rep">生成差异报告</button></div>
+      <div class="hint" id="t_stat">尚未开始</div>
+      <div class="searchbar">
+        <input id="t_scan" placeholder="扫描在库瓶码" autocomplete="off">
+        <button class="btn secondary" id="t_btn">记入</button></div>
+      <div id="t_result"></div></div>`;
+  q(box,"#t_start").onclick=async()=>{
+    const items=await api("/api/items?status="+encodeURIComponent("在库"));
+    scope=items.map(i=>i.bottle_id);found=[];
+    q(box,"#t_result").innerHTML="";
+    q(box,"#t_stat").textContent=`盘点进行中：已扫 0 / ${scope.length} 瓶`;
+    toast(`盘点开始：共 ${scope.length} 瓶在库`);
+    q(box,"#t_scan").focus();
   };
-  const updStat=()=>{$("#tstat").innerHTML=`已扫 <b>${stFound.length}</b> / ${stScope.length} 瓶`};
-  $("#tbtn").onclick=()=>{
-    const code=$("#tscan").value.trim();if(!code)return;
-    if(stFound.includes(code))toast("重复扫码");
-    else{stFound.push(code);if(!stScope.includes(code))toast("未知瓶："+code)}
-    $("#tscan").value="";updStat();$("#tscan").focus();
-  };
-  $("#tscan").addEventListener("keydown",e=>{if(e.key==="Enter")$("#tbtn").click()});
-  $("#trep").onclick=async()=>{
-    const j=await api("/api/stocktake/report",{method:"POST",body:JSON.stringify({found:stFound,scope:stScope})});
-    const r=j.report;
-    $("#tresult").innerHTML=`<h4>差异报告</h4><p>应盘 ${j.scope_count}，实扫 ${j.found_count}</p>
-      <div class="tbl-wrap"><table class="tbl"><thead><tr><th>类型</th><th>瓶号</th><th>名称</th></tr></thead><tbody>
-      ${r.map(x=>`<tr><td>${x.type==="missing"?"盘亏":"未知瓶"}</td><td>${x.bottle_id}</td><td>${x.name}</td></tr>`).join("")}
-      </tbody></table></div>`;
-  };
-}
-/* ---------- 参数设置 ---------- */
-function renderCfg(main){
-  api("/api/config").then(cfg=>{
-    const keys=["login_user","login_pass","id_prefix","default_operator","label_width","label_height",
-      "label_dpi","big_box","small_box","label_printer","locations","persons","uses","units"];
-    const labels={login_user:"登录账号",login_pass:"登录密码",id_prefix:"瓶号前缀",
-      default_operator:"默认经办人",label_width:"标签宽度(mm)",label_height:"标签高度(mm)",
-      label_dpi:"打印机DPI",big_box:"大盒格数",small_box:"小盒格数",label_printer:"标签打印机",
-      locations:"库位字典(每行一个)",persons:"人员(每行一个)",uses:"用途(每行一个)",units:"单位(每行一个)"};
-    let html=`<h3>参数设置</h3>`;
-    keys.forEach(k=>{
-      const v=cfg[k]??"";
-      const isLong=["locations","persons","uses","units"].includes(k);
-      html+=`<div class="form-row"><label>${labels[k]}</label>${isLong?
-        `<textarea id="c_${k}" rows="3">${v}</textarea>`:
-        `<input id="c_${k}" value="${String(v).replace(/"/g,"&quot;")}" ${k==="login_pass"?'type="password"':""}>`}</div>`;
-    });
-    html+=`<div style="display:flex;gap:8px;margin-top:14px">
-      <button class="btn btn-green" id="csave">保存设置</button>
-      <button class="btn btn-blue" id="cbackup">备份数据</button></div>`;
-    if(isNative){
-      html+=`<h3 style="margin-top:26px">服务器连接</h3>
-        <div class="form-row"><label>服务器地址</label>
-          <div style="flex:1;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-            <input id="cserverbase" value="${serverBase}" style="flex:1;min-width:220px" placeholder="192.168.0.107:8765">
-            <button class="btn btn-gray" id="cservertest" style="padding:8px 14px">测试连接</button>
-            <button class="btn btn-blue" id="cserversave" style="padding:8px 14px">保存地址</button>
-          </div>
-        </div>
-        <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
-          <button class="btn btn-green" id="cpull" style="padding:8px 14px">从电脑同步数据</button>
-          <button class="btn btn-primary" id="cpush" style="padding:8px 14px">上传数据到电脑</button>
-        </div>`;
+  const addScan=()=>{
+    const code=q(box,"#t_scan").value.trim();if(!code)return;
+    q(box,"#t_scan").value="";
+    if(found.includes(code)){toast("该瓶已扫，请勿重复")}
+    else{
+      found.push(code);
+      if(!scope.includes(code))toast("注意：该瓶不在在库清单中");
     }
-    html+=`<h3 style="margin-top:26px">离线缓存</h3>
-      <div class="form-row" style="align-items:flex-start"><label>缓存状态</label>
-        <div style="flex:1;font-size:14px;color:#555;line-height:1.9">
-          <div id="cachestat"></div>
-          <div id="storagestat" style="margin-top:4px;font-size:13px;color:#888"></div>
-          <div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap">
-            <button class="btn btn-primary" id="cflush" style="padding:8px 14px">立即同步离线操作</button>
-            <button class="btn btn-warn" id="cclear" style="padding:8px 14px">清空本地数据缓存</button>
-          </div>
-          <div style="color:#999;font-size:12px;margin-top:6px">清缓存不影响服务器数据；离线操作记录请在同步完成后再清理。</div>
+    q(box,"#t_stat").textContent=`盘点进行中：已扫 ${found.length} / ${scope.length} 瓶`;
+    q(box,"#t_scan").focus();
+  };
+  q(box,"#t_btn").onclick=addScan;
+  q(box,"#t_scan").addEventListener("keydown",e=>{if(e.key==="Enter")addScan()});
+  q(box,"#t_rep").onclick=async()=>{
+    if(!scope.length){toast("请先开始盘点");return}
+    const r=await api("/api/stocktake/report",
+      {method:"POST",body:JSON.stringify({found:found,scope:scope})});
+    const rows=[
+      ...(r.missing||[]).map(bid=>({type:"盘亏（未扫到）",bid})),
+      ...(r.extra||[]).map(bid=>({type:"多出（非在库）",bid}))
+    ];
+    q(box,"#t_result").innerHTML=`<hr class="sep">
+      <h3 style="font-size:15px">差异报告</h3>
+      <div class="hint">应盘 ${r.total} 瓶，实扫 ${r.found} 瓶，差异 ${r.diff} 项</div>
+      ${rows.length?`<div class="tbl-wrap"><table class="tbl"><thead><tr>
+        <th>类型</th><th>瓶号</th></tr></thead><tbody>
+        ${rows.map(x=>`<tr><td>${esc(x.type)}</td><td>${esc(x.bid)}</td></tr>`).join("")}
+        </tbody></table></div>`
+      :'<div class="hint">无差异，账实相符。</div>'}`;
+  };
+  return{reload(){}};
+}
+
+/* ================= 页面：参数设置 ================= */
+function pageSettings(box){
+  box.innerHTML=`<div class="hint">加载中…</div>`;
+  let cfg=null;
+  async function load(){
+    cfg=await api("/api/config");
+    box.innerHTML=`
+      <div class="panel"><h3>服务器与同步</h3>
+        <label class="fld"><span>同步服务器地址（本地优先，留空则纯单机）</span>
+          <input id="s_url" value="${esc(cfg.server_url||"")}" placeholder="http://192.168.x.x:8765"></label>
+        <div class="actions">
+          <button class="btn secondary" id="s_test">测试连接</button>
+          <button class="btn" id="s_sync">立即同步（syncNow）</button></div>
+        <div class="hint" id="s_last"></div></div>
+
+      <div class="panel"><h3>钉钉群通知</h3>
+        <label class="fld"><span>自动推送</span>
+          <select id="s_dtauto">
+            <option value="0" ${String(cfg.dingtalk_auto||"0")!=="1"?"selected":""}>关闭</option>
+            <option value="1" ${String(cfg.dingtalk_auto)==="1"?"selected":""}>开启（入/出/还/废自动通知）</option></select></label>
+        <label class="fld"><span>机器人 Webhook</span>
+          <input id="s_dtw" value="${esc(cfg.dingtalk_webhook||"")}"></label>
+        <label class="fld"><span>加签密钥（可空）</span>
+          <input id="s_dts" value="${esc(cfg.dingtalk_secret||"")}"></label>
+        <div class="actions">
+          <button class="btn secondary" id="s_dttest">测试机器人</button>
+          <button class="btn secondary" id="s_dtpush">推送库存摘要</button></div>
+        <div class="hint">钉钉推送由服务器发出；未连接服务器时按钮无效。</div></div>
+
+      <div class="panel"><h3>常用参数</h3>
+        <div class="grid2">
+          <label class="fld"><span>瓶号前缀</span><input id="s_prefix" value="${esc(cfg.id_prefix||"SS")}"></label>
+          <label class="fld"><span>默认经办人</span><input id="s_op" value="${esc(cfg.default_operator||"")}"></label>
         </div>
-      </div>
-      <h3 style="margin-top:26px">蓝牙标签打印机</h3>
-      <div class="form-row" style="align-items:flex-start"><label>打印机管理</label>
-        <div style="flex:1;font-size:14px;color:#555;line-height:1.9">
-          <div id="btstat" style="margin-bottom:6px">未连接</div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap">
-            <button class="btn btn-blue" id="btscan" style="padding:8px 14px">搜索打印机</button>
-            <button class="btn btn-green" id="bttest" style="padding:8px 14px">测试打印</button>
-            <button class="btn btn-warn" id="btdisc" style="padding:8px 14px">断开</button>
-          </div>
-          <div id="btlist" style="margin-top:8px"></div>
-          <div style="color:#999;font-size:12px;margin-top:6px">支持蓝牙标签打印机（汉印/佳博/得力/芯烨等 ESC/POS 协议）；未连接时标签将走浏览器打印。</div>
+        <div class="grid2">
+          <label class="fld"><span>开封默认效期(天)</span><input id="s_opendays" value="${esc(cfg.default_open_days||"30")}"></label>
+          <label class="fld">&nbsp;</label>
         </div>
-      </div>`;
-    main.innerHTML=html;
-    const refreshCacheStat=()=>{
-      const n=getQueue().length;
-      $("#cachestat").innerHTML=navigator.onLine
-        ? (n?`在线 · 有 <b style="color:#e67e22">${n}</b> 条离线操作待同步`:"在线 · 所有操作均已同步")
-        : `离线模式 · <b style="color:#e74c3c">${n}</b> 条操作待联网后同步`;
-    };
-    const fmtKB=b=>b>=1048576?(b/1048576).toFixed(2)+" MB":Math.max(1,Math.round(b/1024))+" KB";
-    async function refreshStorageStat(){
-      let storedNew=0,raw=0,cnt=0,gz=0,legacy=0;
+        <label class="fld"><span>人员清单（每行一个）</span>
+          <textarea id="s_persons" rows="3">${esc(cfg.persons||"")}</textarea></label>
+        <label class="fld"><span>单位清单（每行一个）</span>
+          <textarea id="s_units" rows="3">${esc(cfg.units||"")}</textarea></label>
+        <div class="actions"><button class="btn" id="s_save">保存设置</button></div></div>
+
+      <div class="panel"><h3>本地数据</h3>
+        <div class="actions">
+          <button class="btn secondary" id="s_backup">导出备份 JSON</button>
+          <button class="btn danger" id="s_clear">清空本地数据</button></div>
+        <div class="hint">备份文件含全部库存/流水/参数；清空后设备恢复为空库，不影响服务器数据。</div></div>`;
+    const last=localStorage.getItem("xlb_last_ts");
+    if(last)q(box,"#s_last").textContent="上次同步："+last;
+
+    q(box,"#s_test").onclick=async()=>{
+      const base=normUrl(q(box,"#s_url").value);
+      if(!base){toast("请填写服务器地址");return}
       try{
-        const c=await caches.open("xlb-data-v4");
-        const ks=await c.keys();
-        for(const k of ks){
-          const r=await c.match(k);if(!r)continue;
-          const txt=await r.clone().text();
-          try{
-            const w=JSON.parse(txt);
-            if(w&&w.xlbenc){
-              cnt++;
-              if(typeof w.rawsize==="number"){
-                raw+=w.rawsize;
-                // 信封体积近似（仅 JSON 包装 ASCII 部分）
-                storedNew+=txt.length;
-                if(w.cmp==="gzip")gz++;
-              }else legacy++;
-            }
-          }catch(e){}
-        }
-      }catch(e){}
-      let extra="";
-      if(raw>0){
-        const ratio=Math.round((1-storedNew/raw)*100);
-        extra=`；gzip 压缩后约 <b>${fmtKB(storedNew)}</b>（原始 ${fmtKB(raw)}，节省约 ${Math.max(0,ratio)}%，${gz}/${cnt} 项已压缩${legacy?`，另有 ${legacy} 项旧格式待浏览时自动重压缩`:""}）`;
+        const r=await fetch(base+"/api/info");
+        if(!r.ok)throw new Error("HTTP "+r.status);
+        const info=await r.json();
+        toast("连接成功："+(info.app_name||"小笼包")+" v"+info.version);
+      }catch(e){toast("连接失败："+e.message)}
+    };
+    q(box,"#s_sync").onclick=async()=>{
+      /* 地址有改动时先保存再同步 */
+      const url=q(box,"#s_url").value.trim();
+      if(url!==(cfg.server_url||"")){
+        try{await apiWrite("/api/config",{server_url:url})}catch(e){toast(e.message);return}
       }
-      $("#storagestat").innerHTML=`加密缓存 <b>${cnt}</b> 项${extra}`;
-    }
-    const refreshAll=()=>{refreshCacheStat();refreshStorageStat()};
-    refreshAll();
-    $("#csave").onclick=async()=>{
-      const data={};keys.forEach(k=>data[k]=$("#c_"+k).value);
-      try{await apiWrite("/api/config",data,"保存参数设置");refreshCacheStat()}catch(e){toast(e.message)}
+      toast("正在同步…");
+      const r=await doSync(true);
+      toast(r.ok?("同步完成"+(localStorage.getItem("xlb_last_ts")?" · "+
+        localStorage.getItem("xlb_last_ts"):"")):r.msg);
     };
-    $("#cbackup").onclick=()=>{window.location.href=API+"/api/backup"};
-    $("#cflush").onclick=async()=>{
-      if(!navigator.onLine){toast("当前离线，无法同步");return}
-      if(!getQueue().length){toast("没有待同步的操作");return}
-      await flushQueue();refreshAll();
-    };
-    $("#cclear").onclick=async()=>{
-      if(!confirm("将清空本地缓存的库存/流水/标签数据与离线操作记录，确定？"))return;
-      await saveQueue([]);
+    q(box,"#s_save").onclick=async()=>{
       try{
-        await caches.delete("xlb-data-v4");
-        if(navigator.serviceWorker.controller)navigator.serviceWorker.controller.postMessage({type:"CLEAR_DATA"});
-      }catch(e){}
-      refreshAll();toast("本地数据缓存已清空")
+        await apiWrite("/api/config",{
+          server_url:q(box,"#s_url").value.trim(),
+          dingtalk_auto:q(box,"#s_dtauto").value,
+          dingtalk_webhook:q(box,"#s_dtw").value.trim(),
+          dingtalk_secret:q(box,"#s_dts").value.trim(),
+          id_prefix:q(box,"#s_prefix").value.trim(),
+          default_operator:q(box,"#s_op").value.trim(),
+          default_open_days:q(box,"#s_opendays").value.trim(),
+          persons:q(box,"#s_persons").value,
+          units:q(box,"#s_units").value});
+        toast("设置已保存");
+      }catch(e){toast(e.message)}
     };
-    if(isNative){
-      $("#cservertest").onclick=async()=>{
-        try{
-          const info=await testServerBase($("#cserverbase").value);
-          toast("连接成功："+(info.app_name||"小笼包")+" v"+info.version+"，"+info.items+" 条库存")
-        }catch(e){toast(e.message)}
-      };
-      $("#cserversave").onclick=async()=>{
-        const v=$("#cserverbase").value;
-        try{
-          const info=await testServerBase(v); // 先测通才保存
-          await saveServerBase(v);
-          // 新服务器数据不同，清空旧本地缓存（不影响服务器）
-          await saveQueue([]);
-          try{
-            await caches.delete("xlb-data-v4");
-            if(navigator.serviceWorker.controller)navigator.serviceWorker.controller.postMessage({type:"CLEAR_DATA"});
-          }catch(e){}
-          refreshAll();
-          toast("地址已保存："+(info.app_name||"")+" v"+info.version+"，旧缓存已清空")
-        }catch(e){toast(e.message)}
-      };
-      $("#cpull").onclick=async()=>{
-        if(!serverBase){toast("请先保存服务器地址");return}
-        try{
-          toast("正在从电脑拉取数据...");
-          await XLBLocalApi.syncFromServer(serverBase);
-          refreshAll();toast("已从电脑同步数据")
-        }catch(e){toast("同步失败："+e.message)}
-      };
-      $("#cpush").onclick=async()=>{
-        if(!serverBase){toast("请先保存服务器地址");return}
-        if(!confirm("将把本机全部数据上传到电脑端（合并模式，不删除电脑数据），确定？"))return;
-        try{
-          toast("正在上传数据到电脑...");
-          await XLBLocalApi.syncToServer(serverBase);
-          toast("数据已上传到电脑")
-        }catch(e){toast("上传失败："+e.message)}
-      };
-    }
-    // ---- 蓝牙打印机 ----
-    const btSupported=!!(window.XLBBluetoothPrint&&window.XLBBluetoothPrint.isSupported());
-    if(!btSupported){ $("#btstat").innerHTML='<span style="color:#999">当前环境不支持蓝牙打印（仅原生 APK 可用）</span>'; }
-    const updateBtStat=()=>{ $("#btstat").innerHTML = window.XLBBluetoothPrint&&window.XLBBluetoothPrint.isConnected()
-      ? '<span style="color:#51cf66">● 已连接</span>' : '<span style="color:#999">未连接</span>'; };
-    updateBtStat();
-    $("#btscan").onclick=async()=>{
-      if(!btSupported){toast("请在原生 APK 中使用蓝牙打印");return}
+    /* 钉钉按钮直连服务器（该能力在服务器侧） */
+    q(box,"#s_dttest").onclick=async()=>{
       try{
-        $("#btlist").innerHTML='<span style="color:#888">搜索中（10秒）...</span>';
-        const list=document.createElement("div");
-        $("#btlist").innerHTML="";$("#btlist").appendChild(list);
-        await window.XLBBluetoothPrint.scanDevices(d=>{
-          const item=document.createElement("div");
-          item.style.cssText="padding:6px 10px;margin:4px 0;background:#f5f5f5;border-radius:4px;cursor:pointer";
-          item.textContent=d.name+" ("+d.deviceId.slice(0,8)+"...)";
-          item.onclick=async()=>{
-            try{ await window.XLBBluetoothPrint.connect(d.deviceId); updateBtStat(); toast("已连接："+d.name); }
-            catch(e){ toast("连接失败："+e.message); }
-          };
-          list.appendChild(item);
-        });
-        if(!list.children.length) $("#btlist").innerHTML='<span style="color:#999">未发现设备，请确认打印机已开机并处于配对模式</span>';
-      }catch(e){ toast(e.message); }
+        const j=await serverApiCall(box,"/api/dingtalk/test",{
+          webhook:q(box,"#s_dtw").value,secret:q(box,"#s_dts").value});
+        toast(j.msg||"已发送");
+      }catch(e){toast(e.message)}
     };
-    $("#bttest").onclick=async()=>{
-      if(!btSupported||!window.XLBBluetoothPrint.isConnected()){toast("请先连接打印机");return}
-      try{ await window.XLBBluetoothPrint.printTest(); toast("测试指令已发送"); }
-      catch(e){ toast("打印失败："+e.message); }
+    q(box,"#s_dtpush").onclick=async()=>{
+      try{
+        const j=await serverApiCall(box,"/api/dingtalk/push",{});
+        toast(j.msg||"已推送");
+      }catch(e){toast(e.message)}
     };
-    $("#btdisc").onclick=async()=>{
-      if(window.XLBBluetoothPrint) try{ await window.XLBBluetoothPrint.disconnect(); updateBtStat(); toast("已断开"); }catch(e){}
+    q(box,"#s_backup").onclick=async()=>{
+      const json=await XLBDB.exportJSON();
+      const blob=new Blob([json],{type:"application/json"});
+      const a=document.createElement("a");
+      a.href=URL.createObjectURL(blob);
+      a.download=`小笼包备份_${new Date().toISOString().slice(0,10)}.json`;
+      a.click();
     };
-  });
+    q(box,"#s_clear").onclick=async()=>{
+      if(!confirm("确定清空本机全部业务数据？此操作不可恢复。"))return;
+      if(!confirm("再次确认：服务器数据不受影响，是否继续？"))return;
+      await XLBDB.clear();location.reload();
+    };
+  }
+  function normUrl(v){
+    let s=(v||"").trim().replace(/\/+$/,"");
+    if(!s)return"";
+    if(!/^https?:\/\//i.test(s))s="http://"+s;
+    return s;
+  }
+  async function serverApiCall(box,path,body){
+    const base=normUrl(q(box,"#s_url").value)||
+      (!isNative&&/^https?:/.test(location.origin)?location.origin:"");
+    if(!base)throw new Error("请先配置并保存服务器地址");
+    const r=await fetch(base+path,{
+      method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify(body||{})});
+    const j=await r.json().catch(()=>({msg:"HTTP "+r.status}));
+    if(!r.ok)throw new Error(j.msg||("HTTP "+r.status));
+    return j;
+  }
+  load();
+  return{reload:load};
 }
-/* ---------- 启动 ---------- */
+
+/* ================= 页面：账号管理（admin） ================= */
+function pageUsers(box){
+  box.innerHTML=`<div class="panel"><h3>新增账号</h3>
+      <div class="grid2">
+        <label class="fld"><span>账号</span><input id="u_name" autocomplete="off"></label>
+        <label class="fld"><span>初始密码（留空为 123456）</span><input id="u_pass"></label></div>
+      <label class="fld"><span>权限</span><div class="chk-row" id="u_perms">
+        ${PERM_LABELS.map(([k,v],i)=>`<label class="chk"><input type="checkbox" value="${k}"
+          ${i<2?"checked":""}>${v}</label>`).join("")}</div></label>
+      <div class="actions"><button class="btn" id="u_add">创建账号</button></div></div>
+    <div class="panel"><h3>账号列表</h3><div id="u_list" class="hint">加载中…</div></div>`;
+
+  q(box,"#u_add").onclick=async()=>{
+    const user=q(box,"#u_name").value.trim(),
+      pass=q(box,"#u_pass").value;
+    if(!user){toast("请填写账号");return}
+    const perms=[...q(box,"#u_perms").querySelectorAll("input:checked")].map(c=>c.value);
+    try{
+      await apiWrite("/api/users",{user,pass,perms});
+      q(box,"#u_name").value="";q(box,"#u_pass").value="";
+      toast("账号已创建");
+    }catch(e){toast(e.message)}
+  };
+  async function loadList(){
+    const list=await api("/api/users");
+    const wrap=q(box,"#u_list");
+    wrap.className="";
+    wrap.innerHTML="";
+    const tb=el("table","tbl",`<thead><tr>
+      <th>账号</th><th>角色</th><th>权限</th><th>操作</th></tr></thead><tbody></tbody>`);
+    list.forEach(u=>{
+      const tr=el("tr",null,`<td>${esc(u.user)}</td>
+        <td>${u.role==="admin"?'<span class="tag tag-in">管理员</span>':'普通用户'}</td>
+        <td><div class="chk-row">
+          ${PERM_LABELS.map(([k])=>`<label class="chk" style="padding:4px 9px">
+            <input type="checkbox" value="${k}" ${u.role==="admin"||(u.perms||[]).includes(k)?"checked":""}
+            ${u.role==="admin"?"disabled":""}>${PERM_LABELS.find(x=>x[0]===k)[1]}</label>`).join("")}
+        </div></td>
+        <td><button class="btn mini danger">删除</button></td>`);
+      q(tr,".chk-row").addEventListener("change",async()=>{
+        const perms=[...q(tr,".chk-row").querySelectorAll("input:checked")].map(c=>c.value);
+        try{
+          await apiWrite("/api/users",{action:"set_perms",user:u.user,perms});
+          toast("权限已更新");
+        }catch(e){toast(e.message);loadList()}
+      });
+      q(tr,"button").onclick=async()=>{
+        if(!confirm("确定删除账号「"+u.user+"」？"))return;
+        try{
+          await apiDelete("/api/users",{user:u.user});
+          toast("账号已删除");
+        }catch(e){toast(e.message)}
+      };
+      q(tb,"tbody").appendChild(tr);
+    });
+    wrap.appendChild(tb);
+  }
+  loadList();
+  return{reload:loadList};
+}
+
+/* ================= 页面：库位管理（admin） ================= */
+function pageBoxes(box){
+  let rows=[];
+  box.innerHTML=`<div class="panel">
+      <h3>盒位定义（库位棋盘按盒行列渲染为圆形位点）</h3>
+      <div id="b_rows" class="hint">加载中…</div>
+      <div class="actions">
+        <button class="btn secondary" id="b_add">添加盒</button>
+        <button class="btn" id="b_save">保存全部</button></div>
+      <div class="hint">有在库瓶的盒不允许删除；修改行列数后棋盘格位数随之变化。</div></div>`;
+  async function load(){
+    const boxes=await api("/api/boxes");
+    rows=boxes.map(b=>({id:b.id,type:b.type,rows:b.rows,cols:b.cols}));
+    renderRows();
+  }
+  function renderRows(){
+    const wrap=q(box,"#b_rows");
+    wrap.className="";
+    wrap.innerHTML="";
+    rows.forEach((r,i)=>{
+      const row=el("div","boxrow",`
+        <span class="hint" style="margin:0">盒 #${r.id}</span>
+        <select data-f="type">
+          <option value="small" ${r.type==="small"?"selected":""}>小盒</option>
+          <option value="big" ${r.type==="big"?"selected":""}>大盒</option></select>
+        <input type="number" min="1" max="20" data-f="rows" value="${r.rows}">
+        <input type="number" min="1" max="20" data-f="cols" value="${r.cols}">
+        <button class="btn mini danger" data-f="del">×</button>`);
+      row.querySelectorAll("[data-f]").forEach(inp=>{
+        inp.addEventListener("change",()=>{
+          const f=inp.dataset.f;
+          if(f==="del"){
+            rows=rows.filter(x=>x.id!==r.id);renderRows();return;
+          }
+          if(f==="type")r.type=inp.value;
+          else r[f]=Math.max(1,parseInt(inp.value)||1);
+        });
+      });
+      wrap.appendChild(row);
+    });
+  }
+  q(box,"#b_add").onclick=()=>{
+    const nextId=rows.reduce((m,r)=>Math.max(m,r.id),0)+1;
+    rows.push({id:nextId,type:"small",rows:6,cols:10});
+    renderRows();
+  };
+  q(box,"#b_save").onclick=async()=>{
+    try{
+      await apiWrite("/api/boxes",{boxes:rows});
+      _locData=null;
+      toast("库位定义已保存");
+    }catch(e){toast(e.message)}
+  };
+  load();
+  return{reload:load};
+}
+
+/* ================= 页面注册表 ================= */
+const VIEWS={
+  scan:pageScan,receive:pageReceive,stock:pageStock,logs:pageLogs,
+  stocktake:pageStocktake,settings:pageSettings,users:pageUsers,boxes:pageBoxes
+};
+
+/* ================= 启动 ================= */
 window.addEventListener("DOMContentLoaded",async()=>{
-  $app=$("#app");
-  // 先解密本地存储（自动迁移历史明文）
-  await initSecureStorage();
-  // 初始化本地 Store（单机模式核心：从 IndexedDB 加载业务数据）
-  if(window.XLBLocalApi) await window.XLBLocalApi.init();
-  // 读取服务端地址（仅用于可选的联网数据同步，非必需）
-  await loadServerBase();
-  // 恢复上次登录会话：PWA 重开免登录
-  if(sessMem){
-    state.user=sessMem;
-    state.page="home";
+  $app=document.querySelector("#app");
+  if(window.XLBLocalApi){
+    try{await XLBLocalApi.init()}catch(e){}
+  }
+  const s=loadSession();
+  if(s&&s.user){
+    state.user=s.user;state.role=s.role||"user";
+    state.perms=Array.isArray(s.perms)?s.perms:[];
+    state.token=window.XLBLocalApi?"local":"";
+    if(window.XLBLocalApi){
+      XLBLocalApi.setSession(
+        {user:s.user,role:state.role,perms:state.perms});
+    }
+    const tab=firstAllowedTab();
+    state.tab=tab||"inout";
+    state.func=firstFuncKey(state.tab)||"scan";
   }
   render();
+  /* 启动 3 秒后尝试一次后台同步 */
+  setTimeout(()=>{if(window.XLBLocalApi&&XLBLocalApi.isDirty())doSync(false)},3000);
 });
-if("serviceWorker" in navigator){navigator.serviceWorker.register("sw.js").catch(()=>{})}
+if("serviceWorker" in navigator){
+  navigator.serviceWorker.register("sw.js").catch(()=>{});
+}
 </script>
 </body>
 </html>
