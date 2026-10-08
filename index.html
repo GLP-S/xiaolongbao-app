@@ -15,6 +15,7 @@
 <script src="store.js"></script>
 <script src="db.js"></script>
 <script src="label.js"></script>
+<script src="dingtalk.js"></script>
 <script src="api_local.js"></script>
 <script src="bluetooth_print.js"></script>
 <style>
@@ -276,6 +277,7 @@ async function doSync(manual){
     if(r&&r.ok){
       localStorage.setItem("xlb_last_ts",new Date().toLocaleString());
       window.dispatchEvent(new Event("data-changed"));
+      window.dispatchEvent(new Event("xlb-sync-done"));
     }
     return r||{ok:false,msg:"同步失败"};
   }catch(e){return{ok:false,msg:e.message}}
@@ -935,7 +937,7 @@ function pageSettings(box){
         <div class="actions">
           <button class="btn secondary" id="s_dttest">测试机器人</button>
           <button class="btn secondary" id="s_dtpush">推送库存摘要</button></div>
-        <div class="hint">钉钉推送由服务器发出；未连接服务器时按钮无效。</div></div>
+        <div class="hint">三端数据联网后直推钉钉群；Android 走原生网络，iPad/浏览器自动直连，无需经过同步服务器。</div></div>
 
       <div class="panel"><h3>常用参数</h3>
         <div class="grid2">
@@ -996,19 +998,33 @@ function pageSettings(box){
         toast("设置已保存");
       }catch(e){toast(e.message)}
     };
-    /* 钉钉按钮直连服务器（该能力在服务器侧） */
+    /* 钉钉按钮：本机直推（Android 原生网络 / iPad no-cors 直连），不依赖同步服务器 */
     q(box,"#s_dttest").onclick=async()=>{
-      try{
-        const j=await serverApiCall(box,"/api/dingtalk/test",{
-          webhook:q(box,"#s_dtw").value,secret:q(box,"#s_dts").value});
-        toast(j.msg||"已发送");
-      }catch(e){toast(e.message)}
+      const dtCfg={dingtalk_webhook:q(box,"#s_dtw").value,
+                   dingtalk_secret:q(box,"#s_dts").value};
+      if(!dtCfg.dingtalk_webhook.trim()){toast("请先填写机器人 Webhook");return}
+      toast("正在发送…");
+      const j=await XLBDingTalk.send(
+        "### 小笼包 · 对接测试\n\n钉钉机器人连接正常，可以接收库存推送。",
+        "小笼包对接测试",dtCfg);
+      toast(j.ok?(j.msg+"：请查看钉钉群"):j.msg);
     };
     q(box,"#s_dtpush").onclick=async()=>{
-      try{
-        const j=await serverApiCall(box,"/api/dingtalk/push",{});
-        toast(j.msg||"已推送");
-      }catch(e){toast(e.message)}
+      let st;
+      try{st=XLBLocalApi.getStore()}catch(e){toast("本地数据未就绪");return}
+      const items=Object.values(st.items);
+      const cnt=v=>items.filter(i=>i.status===v).length;
+      const todayS=new Date().toISOString().slice(0,10);
+      const tLogs=st.logs.filter(l=>String(l.time||"").startsWith(todayS));
+      const lines=["### 小笼包 · 库存数据摘要","",
+        "- 库存总瓶数："+items.length,
+        "- 在库："+cnt("在库")+"　已出库："+cnt("已出库")+
+          "　已取用："+cnt("已取用")+"　已作废："+cnt("已作废"),
+        "- 品种数："+Object.keys(st.products).length,
+        "- 今日流水："+tLogs.length+" 条"];
+      toast("正在推送…");
+      const j=await XLBDingTalk.send(lines.join("\n"),"小笼包库存摘要",st.config);
+      toast(j.ok?(j.msg+"：请查看钉钉群"):j.msg);
     };
     q(box,"#s_backup").onclick=async()=>{
       const json=await XLBDB.exportJSON();

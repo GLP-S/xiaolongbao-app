@@ -63,6 +63,15 @@
     };
   }
 
+  // v3.0：业务写操作成功后直推钉钉（静默，失败由 XLBDingTalk 自己排队）
+  function dtNotify() {
+    try {
+      if (global.XLBDingTalk)
+        return global.XLBDingTalk.notify.apply(global.XLBDingTalk, arguments);
+    } catch (e) { }
+  }
+  function opUser(fallback) { return fallback || (_session && _session.user) || ""; }
+
   async function localApi(path, opt = {}) {
     await init();
     const p = parsePath(path);
@@ -126,9 +135,23 @@
         const pcode = s.productCodeFor(form.std_id, form.conc, form.unit, form.batch, form.name);
         if (n > 1) {
           const bottle_ids = s.receiveBatch(form, n);
+          const first = s.items[bottle_ids[0]];
+          const locs = bottle_ids.map(b => s.items[b].location).filter(Boolean);
+          dtNotify("批量入库（" + n + " 瓶）", first.name,
+            [["瓶号范围", bottle_ids[0] + " ~ " + bottle_ids[bottle_ids.length - 1]],
+             ["批号", first.batch],
+             ["浓度规格", (first.conc || "") + (first.unit || "")],
+             ["库位", locs.slice(0, 5).join("、") + (locs.length > 5 ? "……" : "")]],
+            opUser(first.operator));
           return { ok: true, bottle_ids, product_code: pcode, is_new_product: !s.products[pcode] };
         }
         const bid = s.receive(form);
+        const it = s.items[bid];
+        dtNotify("入库登记", it.name,
+          [["瓶号", bid], ["批号", it.batch],
+           ["浓度规格", (it.conc || "") + (it.unit || "")],
+           ["有效期至", it.exp_date], ["库位", it.location]],
+          opUser(it.operator));
         return { ok: true, bottle_ids: [bid], bottle_id: bid, product_code: pcode, is_new_product: !s.products[pcode] };
       }
 
@@ -163,9 +186,18 @@
       case "issue": {
         requirePerm("inout");
         const { action, bottle_id, qty, person, purpose, operator, emptied, note } = body;
-        if (action === "use") s.use(bottle_id, qty, person, purpose, operator, { emptied: !!emptied, note });
-        else if (action === "checkout" || action === "out") s.checkout(bottle_id, person, purpose, operator, note);
-        else err("未知操作类型", 400);
+        const it = s.items[bottle_id];
+        if (action === "use") {
+          s.use(bottle_id, qty, person, purpose, operator, { emptied: !!emptied, note });
+          dtNotify("整瓶取用", it && it.name,
+            [["瓶号", bottle_id], ["领用人", person], ["用途/项目", purpose],
+             ["备注", note]], opUser(operator));
+        } else if (action === "checkout" || action === "out") {
+          s.checkout(bottle_id, person, purpose, operator, note);
+          dtNotify("整瓶出库", it && it.name,
+            [["瓶号", bottle_id], ["领用人", person], ["用途/项目", purpose],
+             ["备注", note]], opUser(operator));
+        } else err("未知操作类型", 400);
         return { ok: true };
       }
 
@@ -173,12 +205,18 @@
         requirePerm("inout");
         const { bottle_id, opened, open_date, operator, note } = body;
         s.returnBack(bottle_id, opened, open_date, operator, note);
+        dtNotify("归还入库", s.items[bottle_id] && s.items[bottle_id].name,
+          [["瓶号", bottle_id], ["已开封", opened ? "是" : "否"],
+           ["备注", note]], opUser(operator));
         return { ok: true };
       }
 
       case "discard": {
         requirePerm("inout");
         s.discard(body.bottle_id, body.reason, body.operator);
+        dtNotify("作废", s.items[body.bottle_id] && s.items[body.bottle_id].name,
+          [["瓶号", body.bottle_id], ["作废原因", body.reason]],
+          opUser(body.operator));
         return { ok: true };
       }
 
