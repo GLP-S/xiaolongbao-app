@@ -10,7 +10,7 @@
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
-<title>小笼包 v3.0 · 标准溶液管理</title>
+<title>小笼包 · 标准溶液管理</title>
 <!-- 单版本：本地优先（IndexedDB），联网经 server_url 自动双向同步 -->
 <script src="store.js"></script>
 <script src="db.js"></script>
@@ -40,7 +40,6 @@ html,body{margin:0;padding:0;height:100%;
   display:flex;align-items:center;justify-content:center;font-weight:800;font-size:17px;flex-shrink:0;
   box-shadow:0 3px 0 var(--green-dd)}
 .title{font-size:16px;font-weight:700;white-space:nowrap}
-.title .ver{font-size:11px;color:var(--muted);font-weight:500;margin-left:5px}
 .net-dot{display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);
   background:var(--panel);border:1px solid var(--line);padding:4px 10px;border-radius:20px}
 .net-dot .nd{width:8px;height:8px;border-radius:50%;display:inline-block}
@@ -62,13 +61,14 @@ hr.sep{border:none;border-top:1px solid var(--line);margin:16px 0}
 @media(max-width:480px){.grid2{grid-template-columns:1fr}}
 /* ---------- 按钮（3D 立体） ---------- */
 .btn{border:none;border-radius:var(--radius);padding:11px 18px;font-size:14px;font-weight:700;
-  cursor:pointer;background:var(--green);color:#20251F;box-shadow:0 4px 0 var(--green-dd);
+  cursor:pointer;background:var(--green);color:#20251F;
+  box-shadow:0 5px 0 var(--green-dd),0 8px 14px rgba(0,0,0,.28);
   transition:transform .08s,box-shadow .08s;font-family:inherit;line-height:1.2}
-.btn:active{transform:translateY(3px);box-shadow:0 1px 0 var(--green-dd)}
-.btn.secondary{background:var(--panel2);color:var(--text);box-shadow:0 4px 0 #2A2E33;border:1px solid var(--line)}
-.btn.secondary:active{box-shadow:0 1px 0 #2A2E33}
-.btn.danger{background:var(--danger);color:#fff;box-shadow:0 4px 0 var(--danger-d)}
-.btn.danger:active{box-shadow:0 1px 0 var(--danger-d)}
+.btn:active{transform:translateY(4px);box-shadow:0 1px 0 var(--green-dd),0 2px 4px rgba(0,0,0,.28)}
+.btn.secondary{background:var(--panel2);color:var(--text);box-shadow:0 5px 0 #23262A,0 8px 14px rgba(0,0,0,.24);border:1px solid var(--line)}
+.btn.secondary:active{box-shadow:0 1px 0 #23262A,0 2px 4px rgba(0,0,0,.24)}
+.btn.danger{background:var(--danger);color:#fff;box-shadow:0 5px 0 var(--danger-d),0 8px 14px rgba(0,0,0,.28)}
+.btn.danger:active{box-shadow:0 1px 0 var(--danger-d),0 2px 4px rgba(0,0,0,.28)}
 .btn.ghost{background:transparent;color:var(--green);box-shadow:none;border:1px solid var(--green-d)}
 .btn.ghost:active{transform:translateY(2px);box-shadow:none}
 .btn-sm{padding:7px 12px;border-radius:10px;font-size:13px;box-shadow:0 3px 0 var(--green-dd)}
@@ -118,13 +118,14 @@ textarea{resize:vertical;min-height:60px}
 .tag-discard{background:rgba(160,160,160,.18);color:#B8BEC3}
 /* ---------- 库位棋盘（方形网格 × 圆形位点） ---------- */
 .board-wrap{overflow-x:auto;padding-bottom:6px}
-.board{display:grid;gap:8px;--slot:36px;
-  grid-template-columns:repeat(var(--cols),var(--slot));margin:10px 0;width:max-content}
+.board{display:grid;gap:4px;--slot:28px;
+  grid-template-columns:repeat(var(--cols),var(--slot));margin:8px 0;width:max-content}
 .slot{width:var(--slot);height:var(--slot);border-radius:50%;border:none;background:var(--green);
-  color:#23301F;font-size:11px;font-weight:800;cursor:pointer;display:flex;align-items:center;
-  justify-content:center;padding:0;font-family:inherit;transition:transform .08s}
-.slot:active:not(.occ){transform:scale(.9)}
-.slot.occ{background:#6C757D;color:#EDF0F2;cursor:not-allowed}
+  color:#23301F;font-size:10px;font-weight:800;cursor:pointer;display:flex;align-items:center;
+  justify-content:center;padding:0;font-family:inherit;transition:transform .08s;
+  box-shadow:0 2px 0 var(--green-dd)}
+.slot:active:not(.occ){transform:scale(.9);box-shadow:none}
+.slot.occ{box-shadow:none;background:#6C757D;color:#EDF0F2;cursor:not-allowed}
 .slot.sel{background:#F2F5F1;color:#1F2420;
   box-shadow:0 0 0 3px var(--green-d),0 2px 6px rgba(0,0,0,.45)}
 /* ---------- 弹窗 ---------- */
@@ -144,9 +145,12 @@ textarea{resize:vertical;min-height:60px}
 .chk{display:inline-flex;align-items:center;gap:6px;background:var(--bg2);border:1px solid var(--line);
   padding:7px 12px;border-radius:20px;font-size:13px;color:var(--text);cursor:pointer}
 .chk input{width:auto;accent-color:var(--green)}
+/* ---------- 管理列表滚动容器 ---------- */
+.list-wrap{max-height:300px;overflow-y:auto;overflow-x:auto;border:1px solid var(--line);
+  border-radius:12px;background:var(--panel);-webkit-overflow-scrolling:touch}
 /* ---------- 盒管理行 ---------- */
 .boxrow{display:grid;grid-template-columns:1fr 104px 72px 72px 42px;gap:8px;
-  align-items:center;margin-bottom:8px}
+  align-items:center;padding:4px 8px}
 @media(max-width:480px){.boxrow{grid-template-columns:1fr 88px 60px 60px 38px}}
 /* ---------- toast ---------- */
 .toast{position:fixed;top:18px;left:50%;transform:translateX(-50%);background:#1E2226;
@@ -161,9 +165,12 @@ textarea{resize:vertical;min-height:60px}
   font-size:clamp(26px,9vmin,46px);font-weight:800;display:flex;align-items:center;justify-content:center;
   margin:0 auto 14px;box-shadow:0 clamp(4px,1.4vmin,7px) 0 var(--green-dd)}
 .login-card h1{font-size:20px;margin:6px 0 2px}
-.login-card .sub{color:var(--muted);font-size:12px;margin-bottom:20px}
+.login-card .sub{color:var(--muted);font-size:12px;margin-bottom:16px}
 .login-card .err{color:var(--danger);font-size:13px;min-height:18px;margin-bottom:8px}
-.login-card .btn{width:100%;margin-top:4px}
+.login-card .btn{width:100%;margin-top:6px}
+.login-card .lfld{display:block;text-align:left;margin:0 0 14px}
+.login-card .lfld span{display:block;margin:0 2px 6px;font-size:13px;font-weight:700;color:var(--text)}
+.login-card .lfld input{margin:0}
 </style>
 </head>
 <body>
@@ -303,12 +310,10 @@ setInterval(()=>{if(window.XLBLocalApi&&XLBLocalApi.isDirty())doSync(false)},600
 
 function updateNetUI(){
   const dot=q($app,"#netdot");if(!dot)return;
-  const online=navigator.onLine,dirty=!!(window.XLBLocalApi&&XLBLocalApi.isDirty());
+  const online=navigator.onLine;
   const last=localStorage.getItem("xlb_last_ts");
   dot.className="net-dot "+(online?"online":"offline");
-  dot.innerHTML=online
-    ?(dirty?'<span class="nd"></span>待同步':'<span class="nd"></span>在线')
-    :'<span class="nd"></span>离线';
+  dot.innerHTML=online?'<span class="nd"></span>在线':'<span class="nd"></span>离线';
   dot.title=last?("上次同步："+last):"尚未与服务器同步";
 }
 
@@ -319,7 +324,7 @@ function render(){
   /* 顶栏 */
   const bar=el("div","bar");
   bar.innerHTML=`<div class="brand"><span class="logo">小</span>
-    <span class="title">小笼包<span class="ver">v${APP_VERSION}</span></span></div>
+    <span class="title">小笼包</span></div>
     <div class="net-dot" id="netdot"></div>
     <div class="user-chip">${esc(state.user)}</div>
     <button class="btn btn-sm secondary" id="logout">退出</button>`;
@@ -369,10 +374,12 @@ function renderLogin(){
   w.innerHTML=`<div class="login-card">
     <div class="logo-big">小</div>
     <h1>标准溶液管理系统</h1>
-    <div class="sub">小笼包 v${APP_VERSION} · 本地优先 · 联网自动同步</div>
+    <div class="sub">小笼包 · 本地优先 · 联网自动同步</div>
     <div class="err" id="lerr"></div>
-    <input id="luser" placeholder="账号" autocomplete="off" autocapitalize="none">
-    <input id="lpass" type="password" placeholder="密码" style="margin-top:10px">
+    <label class="lfld"><span>账号</span>
+      <input id="luser" placeholder="请输入账号" autocomplete="off" autocapitalize="none"></label>
+    <label class="lfld"><span>密码</span>
+      <input id="lpass" type="password" placeholder="请输入密码"></label>
     <button class="btn" id="lbtn">登 录</button>
     <div class="hint" style="margin-top:14px">默认管理员账号 admin / 初始密码 admin123</div>
   </div>`;
@@ -970,7 +977,7 @@ function pageSettings(box){
         const r=await fetch(base+"/api/info");
         if(!r.ok)throw new Error("HTTP "+r.status);
         const info=await r.json();
-        toast("连接成功："+(info.app_name||"小笼包")+" v"+info.version);
+        toast("连接成功："+(info.app_name||"小笼包"));
       }catch(e){toast("连接失败："+e.message)}
     };
     q(box,"#s_sync").onclick=async()=>{
@@ -1088,7 +1095,7 @@ function pageUsers(box){
   async function loadList(){
     const list=await api("/api/users");
     const wrap=q(box,"#u_list");
-    wrap.className="";
+    wrap.className="list-wrap";
     wrap.innerHTML="";
     const tb=el("table","tbl",`<thead><tr>
       <th>账号</th><th>角色</th><th>权限</th><th>操作</th></tr></thead><tbody></tbody>`);
@@ -1140,7 +1147,7 @@ function pageBoxes(box){
   }
   function renderRows(){
     const wrap=q(box,"#b_rows");
-    wrap.className="";
+    wrap.className="list-wrap";
     wrap.innerHTML="";
     rows.forEach((r,i)=>{
       const row=el("div","boxrow",`
