@@ -154,11 +154,12 @@ textarea{resize:vertical;min-height:60px}
   z-index:300;font-size:14px;box-shadow:0 8px 24px rgba(0,0,0,.45);max-width:88vw}
 /* ---------- 登录 ---------- */
 .login-wrap{flex:1;display:flex;align-items:center;justify-content:center;padding:24px}
-.login-card{width:100%;max-width:360px;background:var(--panel);border:1px solid var(--line);
-  border-radius:20px;padding:28px 24px;text-align:center}
-.logo-big{width:72px;height:72px;border-radius:20px;background:var(--green);color:#1F2420;
-  font-size:34px;font-weight:800;display:flex;align-items:center;justify-content:center;
-  margin:0 auto 14px;box-shadow:0 6px 0 var(--green-dd)}
+.login-card{width:100%;max-width:clamp(300px,92vw,380px);background:var(--panel);border:1px solid var(--line);
+  border-radius:clamp(16px,5vmin,22px);padding:clamp(20px,5vmin,30px) clamp(18px,5vmin,26px);text-align:center}
+.logo-big{width:clamp(56px,19vmin,96px);height:clamp(56px,19vmin,96px);
+  border-radius:clamp(15px,5vmin,27px);background:var(--green);color:#1F2420;
+  font-size:clamp(26px,9vmin,46px);font-weight:800;display:flex;align-items:center;justify-content:center;
+  margin:0 auto 14px;box-shadow:0 clamp(4px,1.4vmin,7px) 0 var(--green-dd)}
 .login-card h1{font-size:20px;margin:6px 0 2px}
 .login-card .sub{color:var(--muted);font-size:12px;margin-bottom:20px}
 .login-card .err{color:var(--danger);font-size:13px;min-height:18px;margin-bottom:8px}
