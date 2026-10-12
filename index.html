@@ -116,12 +116,12 @@ textarea{resize:vertical;min-height:60px}
 .tag-out{background:rgba(196,106,102,.2);color:#E79C98}
 .tag-used{background:rgba(217,178,106,.2);color:#E5C286}
 .tag-discard{background:rgba(160,160,160,.18);color:#B8BEC3}
-/* ---------- 库位棋盘（方形网格 × 圆形位点） ---------- */
+/* ---------- 库位棋盘（方形网格 × 椭圆位点，v3.1 放大拉宽压扁） ---------- */
 .board-wrap{overflow-x:auto;padding-bottom:6px}
-.board{display:grid;gap:4px;--slot:28px;
-  grid-template-columns:repeat(var(--cols),var(--slot));margin:8px 0;width:max-content}
-.slot{width:var(--slot);height:var(--slot);border-radius:50%;border:none;background:var(--green);
-  color:#23301F;font-size:10px;font-weight:800;cursor:pointer;display:flex;align-items:center;
+.board{display:grid;gap:6px;--slotw:54px;--sloth:30px;
+  grid-template-columns:repeat(var(--cols),var(--slotw));margin:8px 0;width:max-content}
+.slot{width:var(--slotw);height:var(--sloth);border-radius:50%;border:none;background:var(--green);
+  color:#23301F;font-size:12px;font-weight:800;cursor:pointer;display:flex;align-items:center;
   justify-content:center;padding:0;font-family:inherit;transition:transform .08s;
   box-shadow:0 2px 0 var(--green-dd)}
 .slot:active:not(.occ){transform:scale(.9);box-shadow:none}
@@ -569,12 +569,20 @@ async function buildForm(box,f){
       <input id="r_name" readonly placeholder="填写编号/浓度/批号后自动生成"></label>
     <div class="grid2">
       <label class="fld"><span>标准物质编号 *</span><input id="r_std" value="${esc(f.std_id||"")}"></label>
-      <label class="fld"><span>浓度/规格 *</span><input id="r_conc" value="${esc(f.conc||"")}" placeholder="如 0.1000 mol/L"></label>
+      <label class="fld"><span>标准物质名称（匹配管理表自动带入）</span>
+        <input id="r_stdname" list="dl_stdname" placeholder="如 盐酸">
+        <datalist id="dl_stdname"></datalist></label>
     </div>
     <div class="grid2">
+      <label class="fld"><span>浓度/规格 *</span><input id="r_conc" value="${esc(f.conc||"")}" placeholder="如 0.1000 mol/L"></label>
       <label class="fld"><span>单位</span><select id="r_unit">
         ${units.map(u=>`<option ${u===(f.unit||"mL")?"selected":""}>${esc(u)}</option>`).join("")}</select></label>
+    </div>
+    <div class="grid2">
       <label class="fld"><span>批号（4 位数字）*</span><input id="r_batch" value="${esc(f.batch||"")}" maxlength="4"></label>
+      <label class="fld"><span>GLP属性</span><span class="inline chk-row">
+        <label class="chk"><input type="radio" name="r_glp" value="GLP" checked>GLP</label>
+        <label class="chk"><input type="radio" name="r_glp" value="非GLP">非GLP</label></span></label>
     </div>
     <div class="grid2">
       <label class="fld"><span>配置人</span><input id="r_maker"></label>
@@ -612,6 +620,27 @@ async function buildForm(box,f){
   ["r_std","r_conc","r_batch"].forEach(id=>q(box,"#"+id).addEventListener("input",syncName));
   q(box,"#r_unit").addEventListener("change",syncName);
   syncName();
+
+  /* v3.1：标准物质名称——候选下拉 + 按管理表（品种档案）自动带入 */
+  let _prods=[];
+  try{_prods=await api("/api/products")}catch(e){}
+  q(box,"#dl_stdname").innerHTML=[...new Set(_prods.map(p=>(p.std_name||"").trim()).filter(Boolean))]
+    .sort().map(n=>`<option value="${esc(n)}">`).join("");
+  q(box,"#r_std").addEventListener("input",()=>{
+    const sn=q(box,"#r_stdname");
+    if(sn.value.trim())return;
+    const std=q(box,"#r_std").value.trim();
+    const hit=_prods.find(p=>(p.std_id||"").trim()===std&&p.std_name);
+    if(hit)sn.value=hit.std_name;
+  });
+
+  /* v3.1：GLP属性——非GLP 时入库数量固定为 1 */
+  const qtyEl=q(box,"#r_qty");
+  box.querySelectorAll("input[name=r_glp]").forEach(r=>r.addEventListener("change",()=>{
+    const v=box.querySelector("input[name=r_glp]:checked").value;
+    if(v==="非GLP"){qtyEl.value="1";qtyEl.disabled=true}
+    else{qtyEl.disabled=false}
+  }));
 
   /* 盒下拉 + 圆形棋盘 */
   const data=await loadLocData(true);
@@ -652,6 +681,8 @@ async function buildForm(box,f){
     const form={
       name:q(box,"#r_name").value.trim(),std_id:stdV,conc:concV,
       unit:q(box,"#r_unit").value,batch:batchV,
+      std_name:q(box,"#r_stdname").value.trim(),
+      glp_type:box.querySelector("input[name=r_glp]:checked").value,
       maker:q(box,"#r_maker").value.trim(),
       prod_date:q(box,"#r_prod").value,exp_date:q(box,"#r_exp").value,
       init_amount:q(box,"#r_init").value,
@@ -662,7 +693,7 @@ async function buildForm(box,f){
       project_no:q(box,"#r_proj").value.trim(),
       solvent:q(box,"#r_sol").value.trim(),
       note:q(box,"#r_note").value.trim()};
-    const qty=parseInt(q(box,"#r_qty").value)||1;
+    const qty=form.glp_type==="非GLP"?1:(parseInt(q(box,"#r_qty").value)||1);
     try{
       const j=await apiWrite("/api/receive",{...form,qty});
       toast(`入库成功：${j.bottle_ids.length} 瓶`);
@@ -726,6 +757,7 @@ function pageStock(box){
         <td><span class="tag ${tagCls(it.status)}">${esc(it.status)}</span></td>
         <td>${esc(it.exp_date||"")}</td>
         <td><button class="btn mini secondary" data-op="reprint">补打</button>
+          <button class="btn mini secondary" data-op="sheet">管理表</button>
           <button class="btn mini danger" data-op="discard">作废</button></td>`);
       tr.addEventListener("click",e=>{
         if(e.target.closest("button"))return;
@@ -733,6 +765,8 @@ function pageStock(box){
       });
       q(tr,"[data-op=reprint]").addEventListener("click",
         e=>{e.stopPropagation();doReprint(it.bottle_id)});
+      q(tr,"[data-op=sheet]").addEventListener("click",
+        e=>{e.stopPropagation();printProductSheet(it.product_code)});
       q(tr,"[data-op=discard]").addEventListener("click",async e=>{
         e.stopPropagation();
         const reason=prompt("作废原因：")||"";
@@ -753,6 +787,44 @@ function pageStock(box){
   return{reload:load};
 }
 
+/* v3.1：标准溶液管理表打印（同一品种码：品种档案 + 全部瓶明细，浏览器打印） */
+async function printProductSheet(code){
+  if(!code){toast("该瓶缺少品种码");return}
+  try{
+    const j=await api("/api/product_sheet?code="+encodeURIComponent(code));
+    const p=j.product||{},rows=j.bottles||[];
+    const info=[["溶液名称",p.name],["标准物质名称",p.std_name],["标准物质编号",p.std_id],
+      ["浓度/规格",(p.conc||"")+(p.unit||"")],["批号",p.batch],["GLP属性",p.glp_type||"GLP"],
+      ["配置人",p.maker],["生产日期",p.prod_date],["项目号",p.project_no],
+      ["首次登记",p.first_date]];
+    const w=window.open("","_blank");
+    if(!w){toast("请允许弹出窗口以打印");return}
+    w.document.write(`<html><head><title>标准溶液管理表</title><meta charset="utf-8">
+      <style>
+      body{font-family:"Microsoft YaHei","PingFang SC",sans-serif;margin:18px;color:#000}
+      h2{text-align:center;margin:0 0 4px} .sub{text-align:center;color:#333;font-size:12px;margin-bottom:10px}
+      .info{display:grid;grid-template-columns:1fr 1fr;gap:4px 24px;font-size:13px;margin-bottom:10px}
+      table{width:100%;border-collapse:collapse;font-size:12px}
+      th,td{border:1px solid #000;padding:4px 6px;text-align:left}
+      th{background:#e8e8e8}
+      .sum{margin-top:8px;font-size:13px;font-weight:700}
+      </style></head><body>
+      <h2>标准溶液管理表</h2>
+      <div class="sub">品种码：${esc(code)}　打印时间：${new Date().toLocaleString("zh-CN")}</div>
+      <div class="info">${info.map(kv=>`<div>${esc(kv[0])}：${esc(kv[1]||"—")}</div>`).join("")}</div>
+      <table><thead><tr><th>瓶号</th><th>库位</th><th>状态</th><th>初始量</th><th>单位</th>
+        <th>有效期至</th><th>入库日期</th><th>经办人</th></tr></thead><tbody>
+      ${rows.map(it=>`<tr><td>${esc(it.bottle_id)}</td><td>${esc(it.location||"—")}</td>
+        <td>${esc(it.status)}</td><td>${it.init_amount!=null?it.init_amount:"—"}</td>
+        <td>${esc(it.unit||"")}</td><td>${esc(it.exp_date||"")}</td>
+        <td>${esc(it.in_date||"")}</td><td>${esc(it.operator||"—")}</td></tr>`).join("")}
+      </tbody></table>
+      <div class="sum">在库瓶数：${rows.filter(b=>b.status==="在库").length} / 总瓶数：${rows.length}</div>
+      <scr`+`ipt>window.onload=function(){window.print()}<\/scr`+`ipt></body></html>`);
+    w.document.close();
+  }catch(e){toast(e.message)}
+}
+
 /* 库存详情弹窗：品种二维码 + 瓶码条形码（双码） */
 function openItemModal(it){
   const mask=el("div","mask");
@@ -761,6 +833,8 @@ function openItemModal(it){
     <div class="kv">
       <span class="k">瓶号</span><span class="v">${esc(it.bottle_id)}</span>
       <span class="k">标准编号</span><span class="v">${esc(it.std_id)}</span>
+      <span class="k">标准物质名称</span><span class="v">${esc(it.std_name)||"—"}</span>
+      <span class="k">GLP属性</span><span class="v">${esc(it.glp_type||"GLP")}</span>
       <span class="k">品种码</span><span class="v">${esc(it.product_code)}</span>
       <span class="k">浓度</span><span class="v">${esc(it.conc)} ${esc(it.unit)}</span>
       <span class="k">批号</span><span class="v">${esc(it.batch)}</span>
@@ -779,12 +853,14 @@ function openItemModal(it){
     </div>
     <div class="actions">
       <button class="btn" id="dq_reprint">补打标签</button>
+      <button class="btn secondary" id="dq_sheet">管理表打印</button>
       ${it.status==="在库"?'<button class="btn danger" id="dq_discard">作废</button>':""}
       <button class="btn secondary" id="dq_close">关闭</button></div>`);
   mask.appendChild(m);document.body.appendChild(mask);
   mask.addEventListener("click",e=>{if(e.target===mask)mask.remove()});
   q(m,"#dq_close").onclick=()=>mask.remove();
   q(m,"#dq_reprint").onclick=()=>doReprint(it.bottle_id);
+  q(m,"#dq_sheet").onclick=()=>printProductSheet(it.product_code);
   const discardBtn=q(m,"#dq_discard");
   if(discardBtn)discardBtn.onclick=async()=>{
     const reason=prompt("作废原因：")||"";

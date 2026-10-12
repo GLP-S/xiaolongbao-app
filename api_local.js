@@ -183,6 +183,15 @@
         return { code, ...prod };
       }
 
+      case "product_sheet": {
+        // v3.1：标准溶液管理表数据（code 在 query，因品种码可能含 "/"）
+        const code = opt._code || "";
+        if (!code) err("缺少 code 参数", 400);
+        const [prod, bottles] = s.managementTable(code);
+        if (!prod) err("品种码不存在: " + code, 404);
+        return { code, product: { code, ...prod }, bottles };
+      }
+
       case "issue": {
         requirePerm("inout");
         const { action, bottle_id, qty, person, purpose, operator, emptied, note } = body;

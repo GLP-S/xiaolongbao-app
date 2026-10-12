@@ -9,9 +9,10 @@
   // ---------- 常量（与 Python 版一致） ----------
   const STOCK_KEYS = ["bottle_id","name","std_id","product_code","conc","batch","maker",
     "prod_date","exp_date","open_date","open_limit","open_exp_date","init_amount","amount",
-    "unit","location","status","in_date","operator","project_no","solvent","note"];
+    "unit","location","status","in_date","operator","project_no","solvent","note",
+    "std_name","glp_type"];
   const LOG_KEYS = ["log_id","time","bottle_id","name","action","qty","unit","person","purpose","operator","note"];
-  const PROD_KEYS = ["code","name","std_id","conc","batch","unit","first_date"];
+  const PROD_KEYS = ["code","name","std_id","conc","batch","unit","first_date","std_name","glp_type"];
 
   const ST_IN="在库", ST_OUT="已出库", ST_EMPTY="已用尽", ST_DISCARD="已作废", ST_USED="已取用";
 
@@ -127,6 +128,17 @@
     itemsOfProduct(code){ return Object.values(this.items).filter(i=>i.product_code===code); }
     remainingCount(code){ return this.itemsOfProduct(code).filter(i=>i.status===ST_IN).length; }
     remainingLocations(code){ return this.itemsOfProduct(code).filter(i=>i.status===ST_IN).map(i=>i.location); }
+
+    /** v3.1：标准溶液管理表（同一品种码聚合）：[品种档案, 全部瓶按瓶号排序] */
+    managementTable(code){
+      const p=this.products[code]||null;
+      const bottles=this.itemsOfProduct(code).sort((a,b)=>(a.bottle_id||"").localeCompare(b.bottle_id||""));
+      return [p,bottles];
+    }
+    /** v3.1：标准物质名称去重列表（入库表单下拉） */
+    productStdNames(){
+      return [...new Set(Object.values(this.products).map(p=>(p.std_name||"").trim()).filter(Boolean))].sort();
+    }
 
     /** v2.2：品种二维码载荷（6 字段动态数据；QR 内容直接 JSON.stringify 此对象） */
     productQR(code){
@@ -341,16 +353,24 @@
       if(productCode===null) productCode=this.productCodeFor(stdId, conc, unit, batch, name);
 
       // 品种登记（v2.2：补充 maker/prod_date/project_no，供品种二维码使用）
+      // v3.1：标准物质名称 + GLP 属性——以品种档案（标准溶液管理表）为准自动带入并回补
+      let stdName=(form.std_name||"").trim();
+      let glpType=(form.glp_type||"").trim()||"GLP";
       if(!this.products[productCode]){
         this.products[productCode]={code:productCode, name, std_id:stdId, conc, batch, unit,
           first_date:todayStr(), maker:(form.maker||"").trim(),
-          prod_date:dateStr(form.prod_date), project_no:(form.project_no||"").trim()};
+          prod_date:dateStr(form.prod_date), project_no:(form.project_no||"").trim(),
+          std_name:stdName, glp_type:glpType};
       }else{
         // 后续入库补全品种档案缺失字段（不覆盖已有值）
         const p=this.products[productCode];
         if(!p.maker && form.maker) p.maker=(form.maker||"").trim();
         if(!p.prod_date && form.prod_date) p.prod_date=dateStr(form.prod_date);
         if(!p.project_no && form.project_no) p.project_no=(form.project_no||"").trim();
+        if(!stdName && p.std_name) stdName=p.std_name;
+        if(p.glp_type) glpType=p.glp_type;
+        if(stdName && !p.std_name) p.std_name=stdName;
+        if(glpType && !p.glp_type) p.glp_type=glpType;
       }
 
       const item={
@@ -362,7 +382,8 @@
         init_amount: init!=null && init!=="" ? parseFloat(init) : null,
         amount:null, unit, location:loc, status:ST_IN, in_date:todayStr(),
         operator:(form.operator||"").trim(), project_no:(form.project_no||"").trim(),
-        solvent:(form.solvent||"").trim(), note:(form.note||"").trim()
+        solvent:(form.solvent||"").trim(), note:(form.note||"").trim(),
+        std_name:stdName, glp_type:glpType
       };
       this.items[bid]=item;
       // 经办人/配置人自动加入人员列表
