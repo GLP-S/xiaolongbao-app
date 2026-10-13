@@ -697,6 +697,11 @@ async function buildForm(box,f){
     try{
       const j=await apiWrite("/api/receive",{...form,qty});
       toast(`入库成功：${j.bottle_ids.length} 瓶`);
+      /* v3.2：入库生成品种码/瓶码的同时，自动生成该品种《标准溶液管理表》
+         （同品种全部瓶明细，A4 可打印），可直接连接打印机打印 */
+      if(confirm(`已自动生成品种 ${j.product_code} 的《标准溶液管理表》\n（同品种全部瓶明细，A4 可打印）。\n\n是否立即连接打印机打印？`)){
+        printProductSheet(j.product_code);
+      }
       if(printAfter){
         const images=[];
         try{
