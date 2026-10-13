@@ -10,9 +10,10 @@
   const STOCK_KEYS = ["bottle_id","name","std_id","product_code","conc","batch","maker",
     "prod_date","exp_date","open_date","open_limit","open_exp_date","init_amount","amount",
     "unit","location","status","in_date","operator","project_no","solvent","note",
-    "std_name","glp_type"];
+    "std_name","glp_type","expire_date","storage_cond","storage_place","volume_unit"];
   const LOG_KEYS = ["log_id","time","bottle_id","name","action","qty","unit","person","purpose","operator","note"];
-  const PROD_KEYS = ["code","name","std_id","conc","batch","unit","first_date","std_name","glp_type"];
+  const PROD_KEYS = ["code","name","std_id","conc","batch","unit","first_date","std_name","glp_type",
+    "storage_cond","storage_place"];
 
   const ST_IN="在库", ST_OUT="已出库", ST_EMPTY="已用尽", ST_DISCARD="已作废", ST_USED="已取用";
 
@@ -29,10 +30,11 @@
 
   // ---------- 品种二维码载荷解析（QR 内容为 6 字段 JSON） ----------
   function parseQRPayload(s){
-    if(typeof s!=="string" || s[0]!=="{" || s.indexOf("溶液名称")<0) return null;
+    if(typeof s!=="string" || s[0]!=="{" ||
+       (s.indexOf("标准溶液编号")<0 && s.indexOf("溶液名称")<0)) return null;
     try{
       const o=JSON.parse(s);
-      return (o && typeof o==="object" && "溶液名称" in o) ? o : null;
+      return (o && typeof o==="object" && ("标准溶液编号" in o || "溶液名称" in o)) ? o : null;
     }catch(e){ return null; }
   }
   const ACT_RECEIVE="入库", ACT_USE="取用", ACT_CHECKOUT="出库", ACT_RETURN="归还",
@@ -40,13 +42,16 @@
 
   const DEFAULT_CONFIG = {
     warn_days:"30", label_w_mm:"30", label_h_mm:"14", label_dpi:"203",
-    product_w_mm:"40", product_h_mm:"30", cfg_version:"4",
+    product_w_mm:"40", product_h_mm:"30", cfg_version:"6",
     printer:"", id_prefix:"SS", product_prefix:"P", product_seq:"0", default_open_days:"30",
     default_operator:"", locations:"", persons:"", purposes:"", units:"mL\ng\nL\nmg",
     box_count:"20", slot_per_box:"60", bigbox_count:"20", slot_per_bigbox:"24",
     login_user:"admin", login_password:"admin123",
     users:"", boxes:"", server_url:"", sync_last_ts:"0",
-    dingtalk_webhook:"", dingtalk_secret:"", dingtalk_auto:"0", company_server_url:""
+    dingtalk_webhook:"", dingtalk_secret:"", dingtalk_auto:"0", company_server_url:"",
+    storage_conditions:"常温\n冷藏（2-8℃）\n冷冻（-20℃）", volume_units:"mL\nL\nμL",
+    cond_box_map:"", label_printer:"", sheet_printer:"",
+    sheet_template_map:"", sheet_template_name:""
   };
 
   // v3.0 权限全集（与 Python 端 ALL_PERMS 一致）
@@ -148,7 +153,7 @@
       const uniq=a=>[...new Set(a.filter(v=>v!==undefined && v!==null && v!==""))];
       const latest=key=>{ for(let i=inItems.length-1;i>=0;i--){ const v=inItems[i][key]; if(v) return v; } return ""; };
       return {
-        "溶液名称": p.name,
+        "标准溶液编号": p.name,
         "储存位置": uniq(inItems.map(i=>i.location)),
         "剩余数量": inItems.length,
         "项目号": uniq(inItems.map(i=>i.project_no)),
@@ -157,9 +162,9 @@
       };
     }
 
-    /** v2.2：按 QR 载荷（溶液名称）反查本地品种，返回与 findProduct 相同的元组 */
+    /** v2.2：按 QR 载荷（标准溶液编号，兼容旧键"溶液名称"）反查本地品种，返回与 findProduct 相同的元组 */
     findProductByQR(obj){
-      const name=String((obj&&obj["溶液名称"])||"").trim();
+      const name=String((obj&&(obj["标准溶液编号"]||obj["溶液名称"]))||"").trim();
       if(!name) return [null,null];
       for(const code in this.products){
         if(this.products[code].name===name) return this.findProduct(code);
@@ -360,13 +365,17 @@
         this.products[productCode]={code:productCode, name, std_id:stdId, conc, batch, unit,
           first_date:todayStr(), maker:(form.maker||"").trim(),
           prod_date:dateStr(form.prod_date), project_no:(form.project_no||"").trim(),
-          std_name:stdName, glp_type:glpType};
+          std_name:stdName, glp_type:glpType,
+          storage_cond:(form.storage_cond||"").trim(),
+          storage_place:(form.storage_place||"").trim()};
       }else{
         // 后续入库补全品种档案缺失字段（不覆盖已有值）
         const p=this.products[productCode];
         if(!p.maker && form.maker) p.maker=(form.maker||"").trim();
         if(!p.prod_date && form.prod_date) p.prod_date=dateStr(form.prod_date);
         if(!p.project_no && form.project_no) p.project_no=(form.project_no||"").trim();
+        if(!p.storage_cond && form.storage_cond) p.storage_cond=(form.storage_cond||"").trim();
+        if(!p.storage_place && form.storage_place) p.storage_place=(form.storage_place||"").trim();
         if(!stdName && p.std_name) stdName=p.std_name;
         if(p.glp_type) glpType=p.glp_type;
         if(stdName && !p.std_name) p.std_name=stdName;
@@ -383,7 +392,11 @@
         amount:null, unit, location:loc, status:ST_IN, in_date:todayStr(),
         operator:(form.operator||"").trim(), project_no:(form.project_no||"").trim(),
         solvent:(form.solvent||"").trim(), note:(form.note||"").trim(),
-        std_name:stdName, glp_type:glpType
+        std_name:stdName, glp_type:glpType,
+        expire_date:dateStr(addDays(exp,-1)),
+        storage_cond:(form.storage_cond||"").trim(),
+        storage_place:(form.storage_place||"").trim(),
+        volume_unit:(form.volume_unit||"").trim()
       };
       this.items[bid]=item;
       // 经办人/配置人自动加入人员列表

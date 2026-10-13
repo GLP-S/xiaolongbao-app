@@ -469,7 +469,7 @@ function pageScan(box){
         const pan=el("div","panel",`<h3>品种二维码</h3>
           <div class="hint" style="color:var(--warn)">本地尚未建立该品种档案（可能来自其他设备）</div>
           <div class="kv">
-            <span class="k">溶液名称</span><span class="v">${esc(o["溶液名称"])}</span>
+            <span class="k">标准溶液编号</span><span class="v">${esc(o["标准溶液编号"]||o["溶液名称"])}</span>
             <span class="k">储存位置</span><span class="v">${esc(join(o["储存位置"])||"—")}</span>
             <span class="k">剩余数量</span><span class="v">${o["剩余数量"]!=null?esc(o["剩余数量"]):"—"}</span>
             <span class="k">项目号</span><span class="v">${esc(join(o["项目号"])||"—")}</span>
@@ -564,8 +564,10 @@ function pageReceive(box){
 async function buildForm(box,f){
   const cfg=await api("/api/config");
   const units=(cfg.units||"mL\nL\ng\nmg").split("\n").filter(Boolean);
+  const sconds=(cfg.storage_conditions||"").split("\n").map(s=>s.trim()).filter(Boolean);
+  const vunits=(cfg.volume_units||"mL\nL\nμL").split("\n").map(s=>s.trim()).filter(Boolean);
   box.innerHTML=`
-    <label class="fld"><span>溶液名称（自动生成）</span>
+    <label class="fld"><span>标准溶液编号（自动生成）</span>
       <input id="r_name" readonly placeholder="填写编号/浓度/批号后自动生成"></label>
     <div class="grid2">
       <label class="fld"><span>标准物质编号 *</span><input id="r_std" value="${esc(f.std_id||"")}"></label>
@@ -579,6 +581,10 @@ async function buildForm(box,f){
         ${units.map(u=>`<option ${u===(f.unit||"mL")?"selected":""}>${esc(u)}</option>`).join("")}</select></label>
     </div>
     <div class="grid2">
+      <label class="fld"><span>储存条件</span><select id="r_scond"></select></label>
+      <label class="fld"><span>储存位置</span><input id="r_splace" placeholder="如 冰箱A-2层"></label>
+    </div>
+    <div class="grid2">
       <label class="fld"><span>批号（4 位数字）*</span><input id="r_batch" value="${esc(f.batch||"")}" maxlength="4"></label>
       <label class="fld"><span>GLP属性</span><span class="inline chk-row">
         <label class="chk"><input type="radio" name="r_glp" value="GLP" checked>GLP</label>
@@ -590,7 +596,11 @@ async function buildForm(box,f){
     </div>
     <div class="grid2">
       <label class="fld"><span>有效期至</span><input id="r_exp" type="date"></label>
-      <label class="fld"><span>规格(mL/g)</span><input id="r_init" type="number" step="0.01" placeholder="如 500"></label>
+      <label class="fld"><span>失效日期（自动=有效期至-1天）</span><input id="r_expire" readonly placeholder="选择有效期至后自动生成"></label>
+    </div>
+    <div class="grid2">
+      <label class="fld"><span>每瓶分装体积</span><input id="r_init" type="number" step="0.01" placeholder="如 500"></label>
+      <label class="fld"><span>分装单位</span><select id="r_vunit"></select></label>
     </div>
     <label class="fld"><span>开封后效期</span><span class="inline">
       <input id="r_olv" type="number" placeholder="如 30" style="flex:1">
@@ -599,7 +609,7 @@ async function buildForm(box,f){
       <select id="r_boxsel"></select>
       <div class="board-wrap"><div class="board" id="r_board"></div></div></label>
     <div class="grid2">
-      <label class="fld"><span>入库数量</span><input id="r_qty" type="number" value="1" min="1" max="999"></label>
+      <label class="fld"><span>存放量（瓶）</span><input id="r_qty" type="number" value="1" min="1" max="999"></label>
       <label class="fld"><span>经办人</span><input id="r_op" value="${esc(cfg.default_operator||"")}"></label>
     </div>
     <div class="grid2">
@@ -620,6 +630,25 @@ async function buildForm(box,f){
   ["r_std","r_conc","r_batch"].forEach(id=>q(box,"#"+id).addEventListener("input",syncName));
   q(box,"#r_unit").addEventListener("change",syncName);
   syncName();
+
+  /* v3.3：储存条件字典 + 分装体积单位下拉 */
+  q(box,"#r_scond").innerHTML=`<option value=""></option>`+
+    sconds.map(c=>`<option>${esc(c)}</option>`).join("");
+  q(box,"#r_vunit").innerHTML=
+    vunits.map(u=>`<option ${u==="mL"?"selected":""}>${esc(u)}</option>`).join("");
+
+  /* v3.3：失效日期只读联动（自动=有效期至-1天） */
+  const syncExpire=()=>{
+    const v=q(box,"#r_exp").value;
+    const d=v?new Date(v+"T00:00:00"):null;
+    if(!d||isNaN(d)){q(box,"#r_expire").value="";return}
+    d.setDate(d.getDate()-1);
+    const p=n=>String(n).padStart(2,"0");
+    q(box,"#r_expire").value=`${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`;
+  };
+  q(box,"#r_exp").addEventListener("input",syncExpire);
+  q(box,"#r_exp").addEventListener("change",syncExpire);
+  syncExpire();
 
   /* v3.1：标准物质名称——候选下拉 + 按管理表（品种档案）自动带入 */
   let _prods=[];
@@ -669,6 +698,21 @@ async function buildForm(box,f){
   sel.addEventListener("change",drawBoard);
   drawBoard();
 
+  /* v3.3：储存条件→盒子映射，命中时自动跳盒并提示 */
+  q(box,"#r_scond").addEventListener("change",()=>{
+    const cond=q(box,"#r_scond").value;
+    if(!cond)return;
+    let map={};
+    try{map=JSON.parse(cfg.cond_box_map||"{}")||{}}catch(e){}
+    const label=map[cond];
+    if(!label)return;
+    const b=data.boxes.find(x=>x.label===label);
+    if(!b)return;
+    sel.value=b.prefix;
+    drawBoard();
+    toast(`已按储存条件分配 ${label}`);
+  });
+
   /* 保存 */
   const doSave=async(printAfter)=>{
     const stdV=q(box,"#r_std").value.trim(),
@@ -686,6 +730,9 @@ async function buildForm(box,f){
       maker:q(box,"#r_maker").value.trim(),
       prod_date:q(box,"#r_prod").value,exp_date:q(box,"#r_exp").value,
       init_amount:q(box,"#r_init").value,
+      volume_unit:q(box,"#r_vunit").value,
+      storage_cond:q(box,"#r_scond").value,
+      storage_place:q(box,"#r_splace").value.trim(),
       open_limit_value:q(box,"#r_olv").value,
       open_limit_unit:q(box,"#r_olu").value,
       location:_selectedLocs.join(","),
@@ -798,7 +845,7 @@ async function printProductSheet(code){
   try{
     const j=await api("/api/product_sheet?code="+encodeURIComponent(code));
     const p=j.product||{},rows=j.bottles||[];
-    const info=[["溶液名称",p.name],["标准物质名称",p.std_name],["标准物质编号",p.std_id],
+    const info=[["标准溶液编号",p.name],["标准物质名称",p.std_name],["标准物质编号",p.std_id],
       ["浓度/规格",(p.conc||"")+(p.unit||"")],["批号",p.batch],["GLP属性",p.glp_type||"GLP"],
       ["配置人",p.maker],["生产日期",p.prod_date],["项目号",p.project_no],
       ["首次登记",p.first_date]];
@@ -930,7 +977,7 @@ function pageLogs(box){
   q(box,"#f_lexp").onclick=async()=>{
     const logs=await api("/api/logs");
     if(!logs.length){toast("无数据可导出");return}
-    const headers=["流水号","时间","瓶号","溶液名称","操作类型","数量","单位","领用人","用途","经办人","备注"];
+    const headers=["流水号","时间","瓶号","标准溶液编号","操作类型","数量","单位","领用人","用途","经办人","备注"];
     const keys=["log_id","time","bottle_id","name","action","qty","unit","person","purpose","operator","note"];
     let csv="\uFEFF"+headers.join(",")+"\n";
     for(const l of logs){

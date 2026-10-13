@@ -561,7 +561,7 @@
     const titleTop = Math.round(0.8 * u);
     const titleH = Math.round(3.6 * u);
     // 名称（同品种仅出现这一次）
-    const title = String(payload["溶液名称"] || "");
+    const title = String(payload["标准溶液编号"] || payload["溶液名称"] || "");
     const titleSize = fitText(ctx, title, W - 2 * mx, titleH, true, Math.max(7, Math.round(1.6 * u)));
     ctx.font = `bold ${titleSize}px sans-serif`;
     ctx.textBaseline = "top";
