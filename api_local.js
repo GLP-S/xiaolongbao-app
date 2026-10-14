@@ -8,12 +8,12 @@
   "use strict";
 
   const APP_NAME = "小笼包";
-  const APP_VERSION = "3.4";
+  const APP_VERSION = "3.5";
 
   let store = null;
   let _initPromise = null;
   // 当前登录会话（由前端登录成功后 setSession 注入）
-  let _session = null;   // {user, role, perms[]}
+  let _session = null;   // {user, role, perms[], dept}
 
   async function init() {
     if (store) return store;
@@ -21,6 +21,7 @@
     _initPromise = (async () => {
       const data = await global.XLBDB.load();
       store = new global.XLBStore(data || {});
+      if (_session) store.setCurrentDept(_session.dept);
       store.setSaver(d => global.XLBDB.save(d));
       return store;
     })();
@@ -32,8 +33,17 @@
     return store;
   }
 
-  function setSession(s) { _session = s && s.user ? { user: s.user, role: s.role || "user", perms: (s.perms || []).slice() } : null; }
+  function setSession(s) {
+    _session = s && s.user ? { user: s.user, role: s.role || "user", perms: (s.perms || []).slice(), dept: String(s.dept || "").trim() } : null;
+    if (store) store.setCurrentDept(_session ? _session.dept : "");
+  }
   function getSession() { return _session; }
+
+  // v3.5：部门过滤——admin/未登录显示全部；其他只看自己部门（item.dept||"未分配" 比对）
+  function isDeptVisible(rec) {
+    if (!_session || _session.role === "admin") return true;
+    return (rec.dept || "未分配") === (_session.dept || "未分配");
+  }
 
   // 统一响应格式
   function ok(data) { return data; }
@@ -57,9 +67,15 @@
   }
 
   function locationsPayload(s) {
+    // v3.5：占用格位按部门过滤（非 admin 只统计本部门在库瓶，棋盘占用同步过滤）
+    const occ = new Set();
+    for (const k in s.items) {
+      const it = s.items[k];
+      if (it.location && it.status === "在库" && isDeptVisible(it)) occ.add(it.location);
+    }
     return {
       boxes: s.boxes().map(b => ({ ...b, label: s.boxLabel(b), prefix: s.boxLocPrefix(b), slots: s.boxSlots(b) })),
-      occupied: [...s.occupiedLocations()],
+      occupied: [...occ],
     };
   }
 
@@ -90,19 +106,27 @@
         const { user, pass } = body;
         const info = await s.checkLogin(user, pass);
         if (!info) err("账号或密码错误", 401);
-        setSession({ user, role: info.role, perms: info.perms });
-        return { ok: true, user, role: info.role, perms: info.perms, token: "local" };
+        setSession({ user, role: info.role, perms: info.perms, dept: info.dept || "" });
+        return { ok: true, user, role: info.role, perms: info.perms, dept: info.dept || "", token: "local" };
+      }
+
+      case "user_dept": {
+        // v3.5：账号部门查询（免登录，与服务器 /api/user_dept 对齐；查无此人返回空）
+        const u = String(opt._u || p.id || "").trim();
+        const rec = s.users()[u];
+        return { dept: (rec && rec.dept) || "" };
       }
 
       case "users": {
         requireAdmin();
         if (method === "GET") {
-          return Object.entries(s.users()).map(([n, u]) => ({ user: n, role: u.role || "user", perms: u.perms || [] }));
+          return Object.entries(s.users()).map(([n, u]) => ({ user: n, role: u.role || "user", perms: u.perms || [], dept: u.dept || "" }));
         }
         if (method === "POST") {
           if (body.action === "set_perms") await s.setUserPerms(body.user, body.perms || []);
           else if (body.action === "set_pass") await s.setUserPass(body.user, body.pass || "");
-          else await s.addUser(body.user, body.pass || "123456", body.perms || ["inout", "query"]);
+          else if (body.action === "set_dept") await s.setUserDept(body.user, body.dept || "");
+          else await s.addUser(body.user, body.pass || "123456", body.perms || ["inout", "query"], body.dept || "");
           return { ok: true };
         }
         if (method === "DELETE") {
@@ -116,9 +140,11 @@
         // GET 查询
         const q = (opt._q || "").toLowerCase();
         const status = opt._status || "";
+        const deptF = opt._dept || "";   // v3.5：可选部门过滤参数（与服务器 /api/items 对齐）
         let list = Object.values(s.items);
         if (q) list = list.filter(i => (String(i.bottle_id) + i.name + i.std_id + i.conc + i.unit + i.batch + i.product_code + i.location).toLowerCase().includes(q));
         if (status && status !== "全部") list = list.filter(i => i.status === status);
+        if (deptF) list = list.filter(i => (i.dept || "未分配") === deptF);
         return list.sort((a, b) => (b.bottle_id || "").localeCompare(a.bottle_id || ""));
       }
 
@@ -131,6 +157,8 @@
       case "receive": {
         requirePerm("inout");
         const form = body.form || body;
+        // v3.5：业务记录落部门——当前登录用户部门（空→"未分配"，Store 内兜底）
+        form.dept = (form.dept || "").trim() || ((_session && _session.dept) || "");
         const n = parseInt(body.qty || form.qty || form.quantity || "1");
         const pcode = s.productCodeFor(form.std_id, form.conc, form.unit, form.batch, form.name);
         if (n > 1) {

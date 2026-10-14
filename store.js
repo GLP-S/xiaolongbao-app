@@ -10,10 +10,10 @@
   const STOCK_KEYS = ["bottle_id","name","std_id","product_code","conc","batch","maker",
     "prod_date","exp_date","open_date","open_limit","open_exp_date","init_amount","amount",
     "unit","location","status","in_date","operator","project_no","solvent","note",
-    "std_name","glp_type","expire_date","storage_cond","storage_place","volume_unit"];
-  const LOG_KEYS = ["log_id","time","bottle_id","name","action","qty","unit","person","purpose","operator","note"];
+    "std_name","glp_type","expire_date","storage_cond","storage_place","volume_unit","dept"];
+  const LOG_KEYS = ["log_id","time","bottle_id","name","action","qty","unit","person","purpose","operator","note","dept"];
   const PROD_KEYS = ["code","name","std_id","conc","batch","unit","first_date","std_name","glp_type",
-    "storage_cond","storage_place"];
+    "storage_cond","storage_place","dept"];
 
   const ST_IN="在库", ST_OUT="已出库", ST_EMPTY="已用尽", ST_DISCARD="已作废", ST_USED="已取用";
 
@@ -42,7 +42,7 @@
 
   const DEFAULT_CONFIG = {
     warn_days:"30", label_w_mm:"30", label_h_mm:"14", label_dpi:"203",
-    product_w_mm:"40", product_h_mm:"30", cfg_version:"6",
+    product_w_mm:"40", product_h_mm:"30", cfg_version:"7",
     printer:"", id_prefix:"SS", product_prefix:"P", product_seq:"0", default_open_days:"30",
     default_operator:"", locations:"", persons:"", purposes:"", units:"mL\ng\nL\nmg",
     box_count:"20", slot_per_box:"60", bigbox_count:"20", slot_per_bigbox:"24",
@@ -50,6 +50,7 @@
     users:"", boxes:"", server_url:"", sync_last_ts:"0",
     dingtalk_webhook:"", dingtalk_secret:"", dingtalk_auto:"0", company_server_url:"",
     storage_conditions:"常温\n冷藏（2-8℃）\n冷冻（-20℃）", volume_units:"mL\nL\nμL",
+    departments:"未分配",
     cond_box_map:"", label_printer:"", sheet_printer:"",
     sheet_template_map:"", sheet_template_name:"", sheet_template_type:"xlsx"
   };
@@ -115,6 +116,7 @@
       this.logs = [];
       this.config = {...DEFAULT_CONFIG};
       this.products = {};    // code -> product
+      this.currentDept = ""; // v3.5：当前登录用户部门（会话注入，不持久化）
       if(data) this.hydrate(data);
     }
 
@@ -129,6 +131,15 @@
 
     // ---- 配置字典 ----
     dictList(key){ return (this.config[key]||"").split("\n").map(s=>s.trim()).filter(Boolean); }
+    /** v3.5：部门字典（config.departments 按行拆分，空 → ["未分配"]） */
+    deptList(){
+      const l=this.dictList("departments");
+      return l.length?l:["未分配"];
+    }
+
+    /** v3.5：登录成功后由 api_local 注入当前用户部门（业务落库用） */
+    setCurrentDept(d){ this.currentDept=String(d||"").trim(); }
+    curDept(){ return this.currentDept||"未分配"; }
 
     // ---- 品种 ----
     productCodeFor(std_id, conc, unit, batch, name){
@@ -205,15 +216,16 @@
       const ok = u.pass_hash ? (u.pass_hash===hp || u.pass_hash===String(password||""))
                              : (String(password||"")==="admin123" && String(username||"").trim()==="admin");
       if(!ok) return null;
-      return {role: u.role||"user", perms: (u.perms||ALL_PERMS).slice()};
+      return {role: u.role||"user", perms: (u.perms||ALL_PERMS).slice(), dept: u.dept||""};
     }
-    async addUser(username, password, perms){
+    async addUser(username, password, perms, dept){
       username = String(username||"").trim();
       if(!username) throw new Error("账号不能为空");
       const users = this.users();
       if(users[username]) throw new Error("账号已存在");
       users[username] = {pass_hash: await hashPass(password||"123456"), role:"user",
-                         perms:(perms&&perms.length?perms:["inout","query"]).slice()};
+                         perms:(perms&&perms.length?perms:["inout","query"]).slice(),
+                         dept:String(dept||"").trim()};
       await this.saveUsers(users);
     }
     async delUser(username){
@@ -229,6 +241,13 @@
       const users = this.users();
       if(!users[username]) throw new Error("账号不存在");
       users[username].perms = users[username].role==="admin" ? ALL_PERMS.slice() : (perms||[]).slice();
+      await this.saveUsers(users);
+    }
+    /** v3.5：设置账号隶属部门 */
+    async setUserDept(username, dept){
+      const users = this.users();
+      if(!users[username]) throw new Error("账号不存在");
+      users[username].dept = String(dept||"").trim();
       await this.saveUsers(users);
     }
     async setUserPass(username, password){
@@ -319,7 +338,8 @@
       const it=this.items[bottleId]||{};
       this.logs.push({
         log_id:`LOG${new Date().toISOString().replace(/[-:T]/g,"").slice(2,14)}-${String(this.logs.length+1).padStart(5,"0")}`,
-        time:nowStr(), bottle_id:bottleId, name:it.name||"", action, qty, unit, person, purpose, operator, note
+        time:nowStr(), bottle_id:bottleId, name:it.name||"", action, qty, unit, person, purpose, operator, note,
+        dept:this.curDept()
       });
     }
 
@@ -375,13 +395,15 @@
 
       // 品种登记（v2.2：补充 maker/prod_date/project_no，供品种二维码使用）
       // v3.1：标准物质名称 + GLP 属性——以品种档案（标准溶液管理表）为准自动带入并回补
+      // v3.5：品种/瓶记录隶属部门（当前登录用户部门，空→未分配）
+      const deptV=(form.dept||"").trim()||this.curDept();
       let stdName=(form.std_name||"").trim();
       let glpType=(form.glp_type||"").trim()||"GLP";
       if(!this.products[productCode]){
         this.products[productCode]={code:productCode, name, std_id:stdId, conc, batch, unit,
           first_date:todayStr(), maker:(form.maker||"").trim(),
           prod_date:dateStr(form.prod_date), project_no:(form.project_no||"").trim(),
-          std_name:stdName, glp_type:glpType,
+          std_name:stdName, glp_type:glpType, dept:deptV,
           storage_cond:(form.storage_cond||"").trim(),
           storage_place:(form.storage_place||"").trim()};
       }else{
@@ -396,6 +418,7 @@
         if(p.glp_type) glpType=p.glp_type;
         if(stdName && !p.std_name) p.std_name=stdName;
         if(glpType && !p.glp_type) p.glp_type=glpType;
+        if(!p.dept) p.dept=deptV;   // v3.5：已存在品种不覆盖其 dept，仅在缺失时补全
       }
 
       const item={
@@ -412,7 +435,8 @@
         expire_date:dateStr(addDays(exp,-1)),
         storage_cond:(form.storage_cond||"").trim(),
         storage_place:(form.storage_place||"").trim(),
-        volume_unit:(form.volume_unit||"").trim()
+        volume_unit:(form.volume_unit||"").trim(),
+        dept:deptV
       };
       this.items[bid]=item;
       // 经办人/配置人自动加入人员列表

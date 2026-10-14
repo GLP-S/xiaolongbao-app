@@ -178,7 +178,7 @@ textarea{resize:vertical;min-height:60px}
 <script>
 "use strict";
 /* ================= 常量 ================= */
-const APP_VERSION="3.4";
+const APP_VERSION="3.5";
 const ICONS={
   inout:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.3 7 12 12l8.7-5"/><path d="M12 22V12"/></svg>',
   query:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>',
@@ -202,7 +202,7 @@ const TABS=[
 ];
 const PERM_LABELS=[["inout","出入库"],["query","查询统计"],["check","盘点"],["cfg","系统设置"]];
 
-let state={user:null,role:null,perms:[],token:"",tab:"inout",func:"scan"};
+let state={user:null,role:null,perms:[],dept:"",token:"",tab:"inout",func:"scan"};
 let activeView=null;
 let $app=null;
 
@@ -216,6 +216,12 @@ function toast(msg){const t=el("div","toast");t.textContent=msg;document.body.ap
   setTimeout(()=>t.remove(),1900)}
 function tagCls(s){return s==="在库"?"tag-in":s==="已出库"?"tag-out":
   s==="已取用"?"tag-used":"tag-discard"}
+/* v3.5：非 admin 按本部门过滤列表（item.dept||"未分配" 比对；admin 显示全部） */
+function deptVisible(list){
+  if(state.role==="admin")return list;
+  const d=state.dept||"未分配";
+  return list.filter(x=>(x.dept||"未分配")===d);
+}
 
 /* ================= API 层 =================
    单版本：始终本地优先（XLBLocalApi → IndexedDB）；
@@ -360,7 +366,7 @@ function render(){
 }
 
 function doLogout(){
-  state={user:null,role:null,perms:[],token:"",tab:"inout",func:"scan"};
+  state={user:null,role:null,perms:[],dept:"",token:"",tab:"inout",func:"scan"};
   if(window.XLBLocalApi)XLBLocalApi.setSession(null);
   window.__xlb_sync_cred=null;
   clearSession();
@@ -378,6 +384,7 @@ function renderLogin(){
     <div class="err" id="lerr"></div>
     <label class="lfld"><span>账号</span>
       <input id="luser" placeholder="请输入账号" autocomplete="off" autocapitalize="none"></label>
+    <div class="hint" id="ldept" style="min-height:16px;margin:-4px 0 6px"></div>
     <label class="lfld"><span>密码</span>
       <input id="lpass" type="password" placeholder="请输入密码"></label>
     <button class="btn" id="lbtn">登 录</button>
@@ -385,18 +392,39 @@ function renderLogin(){
   </div>`;
   $app.appendChild(w);
   q(w,"#luser").focus();
+  /* v3.5：账号输入后回显隶属部门——优先查本地 config.users，联网时再调 /api/user_dept（失败静默），查无此人显示空 */
+  let _deptSeq=0;
+  const showDept=async()=>{
+    const seq=++_deptSeq,box=q(w,"#ldept"),name=q(w,"#luser").value.trim();
+    if(!name){box.textContent="";return}
+    let dept="";
+    try{
+      const j=await api("/api/user_dept?u="+encodeURIComponent(name));
+      dept=(j&&j.dept)||"";
+    }catch(e){}
+    if(!dept&&navigator.onLine){
+      try{
+        const r=await fetch("/api/user_dept?u="+encodeURIComponent(name),{cache:"no-store"});
+        if(r.ok){const j=await r.json();dept=(j&&j.dept)||""}
+      }catch(e){}
+    }
+    if(seq!==_deptSeq)return;
+    box.textContent=dept?("部门："+dept):"";
+  };
+  q(w,"#luser").addEventListener("input",showDept);
+  q(w,"#luser").addEventListener("blur",showDept);
   const doLogin=async()=>{
     const user=q(w,"#luser").value.trim(),pass=q(w,"#lpass").value;
     if(!user){q(w,"#lerr").textContent="请输入账号";return}
     try{
       const j=await api("/api/login",
         {method:"POST",body:JSON.stringify({user,pass})});
-      state.user=j.user;state.role=j.role;state.perms=j.perms||[];state.token=j.token;
+      state.user=j.user;state.role=j.role;state.perms=j.perms||[];state.dept=j.dept||"";state.token=j.token;
       /* 同步凭据仅存内存，供 syncNow 向服务器换取 Bearer token */
       window.__xlb_sync_cred={user:j.user,pass:pass};
       if(window.XLBLocalApi)XLBLocalApi.setSession(
-        {user:j.user,role:j.role,perms:state.perms});
-      saveSession({user:j.user,role:j.role,perms:state.perms});
+        {user:j.user,role:j.role,perms:state.perms,dept:state.dept});
+      saveSession({user:j.user,role:j.role,perms:state.perms,dept:state.dept});
       const tab=firstAllowedTab();
       state.tab=tab||"inout";state.func=firstFuncKey(state.tab)||"scan";
       render();
@@ -788,8 +816,9 @@ function pageStock(box){
     <div class="tbl-wrap" id="f_sres"></div>`;
   async function load(){
     const kw=q(box,"#f_sq").value,s=q(box,"#f_sst").value;
-    const items=await api("/api/items?q="+encodeURIComponent(kw)+
+    let items=await api("/api/items?q="+encodeURIComponent(kw)+
       "&status="+encodeURIComponent(s));
+    items=deptVisible(items);   /* v3.5：非 admin 只看本部门 */
     const wrap=q(box,"#f_sres");
     if(!items.length){
       wrap.innerHTML=`<div class="hint" style="text-align:center;padding:18px">无匹配数据</div>`;
@@ -956,7 +985,7 @@ function pageLogs(box){
     let url="/api/logs?";
     if(kw)url+="q="+encodeURIComponent(kw)+"&";
     if(d)url+="days="+encodeURIComponent(d);
-    const logs=await api(url);
+    const logs=deptVisible(await api(url));   /* v3.5：非 admin 只看本部门 */
     const wrap=q(box,"#f_lres");
     if(!logs.length){
       wrap.innerHTML=`<div class="hint" style="text-align:center;padding:18px">无数据</div>`;
@@ -975,10 +1004,10 @@ function pageLogs(box){
   q(box,"#f_lbtn").onclick=load;
   q(box,"#f_lq").addEventListener("keydown",e=>{if(e.key==="Enter")load()});
   q(box,"#f_lexp").onclick=async()=>{
-    const logs=await api("/api/logs");
+    const logs=deptVisible(await api("/api/logs"));   /* v3.5：导出同样按部门过滤 */
     if(!logs.length){toast("无数据可导出");return}
-    const headers=["流水号","时间","瓶号","标准溶液编号","操作类型","数量","单位","领用人","用途","经办人","备注"];
-    const keys=["log_id","time","bottle_id","name","action","qty","unit","person","purpose","operator","note"];
+    const headers=["流水号","时间","瓶号","标准溶液编号","操作类型","数量","单位","领用人","用途","经办人","备注","部门"];
+    const keys=["log_id","time","bottle_id","name","action","qty","unit","person","purpose","operator","note","dept"];
     let csv="\uFEFF"+headers.join(",")+"\n";
     for(const l of logs){
       csv+=keys.map(k=>`"${String(l[k]||"").replace(/"/g,'""')}"`).join(",")+"\n";
@@ -1006,7 +1035,7 @@ function pageStocktake(box){
         <button class="btn secondary" id="t_btn">记入</button></div>
       <div id="t_result"></div></div>`;
   q(box,"#t_start").onclick=async()=>{
-    const items=await api("/api/items?status="+encodeURIComponent("在库"));
+    const items=deptVisible(await api("/api/items?status="+encodeURIComponent("在库")));
     scope=items.map(i=>i.bottle_id);found=[];
     q(box,"#t_result").innerHTML="";
     q(box,"#t_stat").textContent=`盘点进行中：已扫 0 / ${scope.length} 瓶`;
@@ -1222,20 +1251,33 @@ function pageUsers(box){
   };
   async function loadList(){
     const list=await api("/api/users");
+    /* v3.5：部门字典（config.departments，空 → ["未分配"]），行内下拉即时保存 */
+    const cfg=await api("/api/config").catch(()=>({}));
+    let depts=(cfg.departments||"未分配").split("\n").map(s=>s.trim()).filter(Boolean);
+    if(!depts.length)depts=["未分配"];
     const wrap=q(box,"#u_list");
     wrap.className="list-wrap";
     wrap.innerHTML="";
     const tb=el("table","tbl",`<thead><tr>
-      <th>账号</th><th>角色</th><th>权限</th><th>操作</th></tr></thead><tbody></tbody>`);
+      <th>账号</th><th>角色</th><th>部门</th><th>权限</th><th>操作</th></tr></thead><tbody></tbody>`);
     list.forEach(u=>{
       const tr=el("tr",null,`<td>${esc(u.user)}</td>
         <td>${u.role==="admin"?'<span class="tag tag-in">管理员</span>':'普通用户'}</td>
+        <td><select class="u-dept" style="max-width:120px">
+          ${depts.map(d=>`<option value="${esc(d)}" ${(u.dept||"未分配")===d?"selected":""}>${esc(d)}</option>`).join("")}
+        </select></td>
         <td><div class="chk-row">
           ${PERM_LABELS.map(([k])=>`<label class="chk" style="padding:4px 9px">
             <input type="checkbox" value="${k}" ${u.role==="admin"||(u.perms||[]).includes(k)?"checked":""}
             ${u.role==="admin"?"disabled":""}>${PERM_LABELS.find(x=>x[0]===k)[1]}</label>`).join("")}
         </div></td>
         <td><button class="btn mini danger">删除</button></td>`);
+      q(tr,".u-dept").addEventListener("change",async e=>{
+        try{
+          await apiWrite("/api/users",{action:"set_dept",user:u.user,dept:e.target.value});
+          toast("部门已更新");
+        }catch(err){toast(err.message);loadList()}
+      });
       q(tr,".chk-row").addEventListener("change",async()=>{
         const perms=[...q(tr,".chk-row").querySelectorAll("input:checked")].map(c=>c.value);
         try{
@@ -1331,10 +1373,23 @@ window.addEventListener("DOMContentLoaded",async()=>{
   if(s&&s.user){
     state.user=s.user;state.role=s.role||"user";
     state.perms=Array.isArray(s.perms)?s.perms:[];
+    state.dept=s.dept||"";
     state.token=window.XLBLocalApi?"local":"";
     if(window.XLBLocalApi){
       XLBLocalApi.setSession(
-        {user:s.user,role:state.role,perms:state.perms});
+        {user:s.user,role:state.role,perms:state.perms,dept:state.dept});
+    }
+    /* v3.5：旧会话无部门时静默补查一次，保证部门过滤立即生效 */
+    if(!state.dept){
+      (async()=>{
+        try{
+          const j=await api("/api/user_dept?u="+encodeURIComponent(state.user));
+          state.dept=(j&&j.dept)||"";
+          if(window.XLBLocalApi)XLBLocalApi.setSession(
+            {user:state.user,role:state.role,perms:state.perms,dept:state.dept});
+          saveSession({user:state.user,role:state.role,perms:state.perms,dept:state.dept});
+        }catch(e){}
+      })();
     }
     const tab=firstAllowedTab();
     state.tab=tab||"inout";
