@@ -51,8 +51,24 @@
     dingtalk_webhook:"", dingtalk_secret:"", dingtalk_auto:"0", company_server_url:"",
     storage_conditions:"常温\n冷藏（2-8℃）\n冷冻（-20℃）", volume_units:"mL\nL\nμL",
     cond_box_map:"", label_printer:"", sheet_printer:"",
-    sheet_template_map:"", sheet_template_name:""
+    sheet_template_map:"", sheet_template_name:"", sheet_template_type:"xlsx"
   };
+
+  // ---------- v3.4：cond_box_map 兼容解析 ----------
+  // 桌面端格式由 {条件名:盒label} 升级为 {条件名:[盒label,...]}；
+  // 此函数两种格式都接受，统一返回 {条件名:[label,...]}，容错返回 {}。
+  function normalizeCondBoxMap(raw){
+    let o=null;
+    try{ o=JSON.parse(String(raw||"{}")); }catch(e){ return {}; }
+    if(!o || typeof o!=="object" || Array.isArray(o)) return {};
+    const out={};
+    for(const k in o){
+      const v=o[k];
+      if(typeof v==="string"){ if(v.trim()) out[k]=[v]; }
+      else if(Array.isArray(v)){ out[k]=v.filter(x=>typeof x==="string"&&x.trim()); }
+    }
+    return out;
+  }
 
   // v3.0 权限全集（与 Python 端 ALL_PERMS 一致）
   const ALL_PERMS = ["inout", "query", "check", "cfg", "admin"];
@@ -543,6 +559,7 @@
   global.XLBDeriveName = deriveName;
   global.XLBParseQRPayload = parseQRPayload;
   global.XLBHashPass = hashPass;
+  global.XLBNormalizeCondBoxMap = normalizeCondBoxMap;
   global.XLBConst = {STOCK_KEYS,LOG_KEYS,PROD_KEYS,ST_IN,ST_OUT,ST_EMPTY,ST_DISCARD,ST_USED,
     ACT_RECEIVE,ACT_USE,ACT_CHECKOUT,ACT_RETURN,ACT_DISCARD,ACT_REPRINT,ACT_EDIT,DEFAULT_CONFIG,ALL_PERMS};
 })(window);

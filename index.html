@@ -178,7 +178,7 @@ textarea{resize:vertical;min-height:60px}
 <script>
 "use strict";
 /* ================= 常量 ================= */
-const APP_VERSION="3.0";
+const APP_VERSION="3.4";
 const ICONS={
   inout:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.3 7 12 12l8.7-5"/><path d="M12 22V12"/></svg>',
   query:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>',
@@ -698,19 +698,19 @@ async function buildForm(box,f){
   sel.addEventListener("change",drawBoard);
   drawBoard();
 
-  /* v3.3：储存条件→盒子映射，命中时自动跳盒并提示 */
+  /* v3.4：储存条件→盒子映射（兼容 {条件:label} 与 {条件:[label,...]} 两种格式），命中时自动跳盒并提示 */
   q(box,"#r_scond").addEventListener("change",()=>{
     const cond=q(box,"#r_scond").value;
     if(!cond)return;
-    let map={};
-    try{map=JSON.parse(cfg.cond_box_map||"{}")||{}}catch(e){}
-    const label=map[cond];
-    if(!label)return;
-    const b=data.boxes.find(x=>x.label===label);
+    const map=XLBNormalizeCondBoxMap(cfg.cond_box_map);
+    const labels=map[cond]||[];
+    if(!labels.length)return;
+    const b=data.boxes.find(x=>x.label===labels[0]);
     if(!b)return;
     sel.value=b.prefix;
     drawBoard();
-    toast(`已按储存条件分配 ${label}`);
+    if(labels.length===1) toast(`已按储存条件分配 ${labels[0]}`);
+    else toast(`该条件映射${labels.length}个盒：${labels.join("、")}（已跳至${labels[0]}）`);
   });
 
   /* 保存 */
