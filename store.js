@@ -50,7 +50,7 @@
     users:"", boxes:"", server_url:"", sync_last_ts:"0",
     dingtalk_webhook:"", dingtalk_secret:"", dingtalk_auto:"0", company_server_url:"",
     storage_conditions:"常温\n冷藏（2-8℃）\n冷冻（-20℃）", volume_units:"mL\nL\nμL",
-    departments:"未分配",
+    storage_places:"", departments:"未分配",
     cond_box_map:"", label_printer:"", sheet_printer:"",
     sheet_template_map:"", sheet_template_name:"", sheet_template_type:"xlsx"
   };
