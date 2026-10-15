@@ -186,7 +186,7 @@ textarea{resize:vertical;min-height:60px}
 <script>
 "use strict";
 /* ================= 常量 ================= */
-const APP_VERSION="3.6";
+const APP_VERSION="3.7";
 const ICONS={
   inout:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.3 7 12 12l8.7-5"/><path d="M12 22V12"/></svg>',
   query:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>',
@@ -224,6 +224,17 @@ function toast(msg){const t=el("div","toast");t.textContent=msg;document.body.ap
   setTimeout(()=>t.remove(),1900)}
 function tagCls(s){return s==="在库"?"tag-in":s==="已出库"?"tag-out":
   s==="已取用"?"tag-used":"tag-discard"}
+/* v3.7：扫码枪输入兼容（NFKC/去 AIM 前缀/去空白控制符/大写）；实现以 store.js 为准 */
+function normalizeScanCode(s){
+  if(window.XLBNormalizeScanCode)return window.XLBNormalizeScanCode(s);
+  return String(s==null?"":s).replace(/\s+/g,"").toUpperCase();
+}
+/* v3.7：扫码统一入口——品种二维码 JSON 用原始串，其余先规范化。返回 {code,qr} */
+function resolveScan(raw){
+  const s=String(raw==null?"":raw);
+  if(window.XLBParseQRPayload&&window.XLBParseQRPayload(s))return {code:s.trim(),qr:true};
+  return {code:normalizeScanCode(s),qr:false};
+}
 /* v3.5：非 admin 按本部门过滤列表（item.dept||"未分配" 比对；admin 显示全部） */
 function deptVisible(list){
   if(state.role==="admin")return list;
@@ -466,8 +477,10 @@ function pageScan(box){
     <div id="f_scanres"></div>`;
   const inp=q(box,"#f_scan"),res=q(box,"#f_scanres");
   async function run(){
-    const code=inp.value.trim();if(!code)return;
+    const raw=inp.value;if(!raw.trim())return;
     inp.value="";
+    // v3.7：品种二维码 JSON 用原始串；瓶码/品种码先规范化（NFKC/AIM/空白/大写）
+    const {code}=resolveScan(raw);
     try{
       const j=await api("/api/scan",
         {method:"POST",body:JSON.stringify({code})});
@@ -1058,8 +1071,12 @@ function pageStocktake(box){
     q(box,"#t_scan").focus();
   };
   const addScan=()=>{
-    const code=q(box,"#t_scan").value.trim();if(!code)return;
+    const raw=q(box,"#t_scan").value;if(!raw.trim())return;
     q(box,"#t_scan").value="";
+    // v3.7：品种二维码不参与盘点；瓶码先规范化（NFKC/AIM/空白/大写）
+    const r=resolveScan(raw);
+    if(r.qr){toast("这是品种二维码，请扫描瓶身条码");q(box,"#t_scan").focus();return}
+    const code=r.code;
     if(found.includes(code)){toast("该瓶已扫，请勿重复")}
     else{
       found.push(code);
@@ -1107,19 +1124,18 @@ function pageSettings(box){
           <button class="btn" id="s_sync">立即同步（syncNow）</button></div>
         <div class="hint" id="s_last"></div></div>
 
-      <div class="panel"><h3>钉钉群通知</h3>
-        <label class="fld"><span>自动推送</span>
-          <select id="s_dtauto">
-            <option value="0" ${String(cfg.dingtalk_auto||"0")!=="1"?"selected":""}>关闭</option>
-            <option value="1" ${String(cfg.dingtalk_auto)==="1"?"selected":""}>开启（入/出/还/废自动通知）</option></select></label>
+      <div class="panel"><h3>钉钉对接</h3>
+        <label class="chk" style="margin-bottom:8px">
+          <input type="checkbox" id="s_dtauto" ${String(cfg.dingtalk_auto||"0")==="1"?"checked":""}>
+          自动推送（入库 / 取用 / 出库 / 归还 / 作废关键操作）</label>
         <label class="fld"><span>机器人 Webhook</span>
-          <input id="s_dtw" value="${esc(cfg.dingtalk_webhook||"")}"></label>
+          <input id="s_dtw" value="${esc(cfg.dingtalk_webhook||"")}" placeholder="https://oapi.dingtalk.com/robot/send?access_token=…"></label>
         <label class="fld"><span>加签密钥（可空）</span>
-          <input id="s_dts" value="${esc(cfg.dingtalk_secret||"")}"></label>
+          <input id="s_dts" value="${esc(cfg.dingtalk_secret||"")}" placeholder="SEC 开头，机器人安全设置选加签时填写"></label>
         <div class="actions">
           <button class="btn secondary" id="s_dttest">测试机器人</button>
           <button class="btn secondary" id="s_dtpush">推送库存摘要</button></div>
-        <div class="hint">三端数据联网后直推钉钉群；Android 走原生网络，iPad/浏览器自动直连，无需经过同步服务器。</div></div>
+        <div class="hint">先保存设置；测试机器人可直接校验当前输入。三端联网直推钉钉群，无需经过同步服务器。</div></div>
 
       <div class="panel"><h3>常用参数</h3>
         <div class="grid2">
@@ -1175,7 +1191,7 @@ function pageSettings(box){
       try{
         await apiWrite("/api/config",{
           server_url:q(box,"#s_url").value.trim(),
-          dingtalk_auto:q(box,"#s_dtauto").value,
+          dingtalk_auto:q(box,"#s_dtauto").checked?"1":"0",
           dingtalk_webhook:q(box,"#s_dtw").value.trim(),
           dingtalk_secret:q(box,"#s_dts").value.trim(),
           id_prefix:q(box,"#s_prefix").value.trim(),
@@ -1198,16 +1214,17 @@ function pageSettings(box){
       await load();
       toast("参数已刷新");
     };
-    /* 钉钉按钮：本机直推（Android 原生网络 / iPad no-cors 直连），不依赖同步服务器 */
+    /* v3.7：测试机器人统一走 /api/dingtalk_test（远程服务端 HMAC 加签发送；
+       本地模式 api_local 内部用 XLBDingTalk 直推），可校验未保存的临时 webhook/secret */
     q(box,"#s_dttest").onclick=async()=>{
-      const dtCfg={dingtalk_webhook:q(box,"#s_dtw").value,
-                   dingtalk_secret:q(box,"#s_dts").value};
-      if(!dtCfg.dingtalk_webhook.trim()){toast("请先填写机器人 Webhook");return}
+      const webhook=q(box,"#s_dtw").value.trim();
+      if(!webhook){toast("请先填写机器人 Webhook");return}
       toast("正在发送…");
-      const j=await XLBDingTalk.send(
-        "### 小笼包 · 对接测试\n\n钉钉机器人连接正常，可以接收库存推送。",
-        "小笼包对接测试",dtCfg);
-      toast(j.ok?(j.msg+"：请查看钉钉群"):j.msg);
+      try{
+        const j=await api("/api/dingtalk_test",{method:"POST",
+          body:JSON.stringify({webhook,secret:q(box,"#s_dts").value.trim()})});
+        toast((j.msg||"发送成功")+"：请查看钉钉群");
+      }catch(e){toast(e.message)}
     };
     q(box,"#s_dtpush").onclick=async()=>{
       let st;

@@ -8,7 +8,7 @@
   "use strict";
 
   const APP_NAME = "小笼包";
-  const APP_VERSION = "3.6";
+  const APP_VERSION = "3.7";
 
   let store = null;
   let _initPromise = null;
@@ -184,12 +184,29 @@
       }
 
       case "scan": {
-        const code = body.code;
-        if (!code) err("扫码内容为空", 400);
+        // v3.7：品种二维码 JSON 用原始串；其余瓶码/品种码先规范化（NFKC/AIM/空白/大写）
+        const raw = String(body.code == null ? "" : body.code);
+        if (!raw.trim()) err("扫码内容为空", 400);
+        const code = global.XLBParseQRPayload(raw)
+          ? raw.trim()
+          : global.XLBNormalizeScanCode(raw);
         try {
           const r = s.scan(code);
           return { ok: true, ...r };
         } catch (e) { err(e.message, 404); }
+      }
+
+      case "dingtalk_test": {
+        // v3.7：与服务器 /api/dingtalk_test 对齐；body 临时 webhook/secret 覆盖已保存配置
+        const webhook = String(body.webhook || "").trim() || String(cfg.dingtalk_webhook || "").trim();
+        const secret = String(body.secret || "").trim() || String(cfg.dingtalk_secret || "").trim();
+        if (!webhook) err("未配置钉钉机器人 Webhook（系统设置 → 钉钉对接）", 400);
+        const r = await global.XLBDingTalk.send(
+          "### 小笼包 · 对接测试\n\n钉钉机器人连接正常，可以接收库存推送。",
+          "小笼包对接测试",
+          { dingtalk_webhook: webhook, dingtalk_secret: secret });
+        if (!r.ok) err(r.msg || "发送失败", 400);
+        return { ok: true, msg: r.msg || "发送成功" };
       }
 
       case "product_qr": {

@@ -1,7 +1,7 @@
 /**
  * 小笼包 —— Canvas 标签渲染（替代 PIL）
  * 输出 dataURL，供浏览器打印或蓝牙打印机使用。
- * 瓶签：溶液名称 + Code128 条码 + 瓶号文字（默认 30×14mm）
+ * 瓶签：溶液名称 + Code128 条码 + 瓶号文字（v3.7 默认 40×20mm）
  * 品种签：溶液名称（仅一次）+ 二维码（6 字段动态内容，默认 40×30mm）
  */
 (function (global) {
@@ -53,19 +53,44 @@
     return pattern;
   }
 
-  function drawBarcode(ctx, text, x, y, w, h) {
+  /**
+   * 逐模块绘制 Code128（v3.7 与桌面端 _code128_native 选模算法对齐）：
+   * 模块宽一律取整数像素（窄条物理宽度 ≥0.25mm 优先，其次左右各 6 模块静区），
+   * 条码在整幅标签内水平居中，白色边距/居中留白即静区；不做位图缩放。
+   * @param {number} cx 条码带水平中心（px）
+   * @param {number} availW 内容可用宽（内框宽，静区优先在此范围内满足）
+   * @param {number} fullW 整幅标签宽（静区让位时的最终容纳边界）
+   * @returns {number|null} 实际模块宽 px；无法编码返回 null
+   */
+  function drawBarcode(ctx, text, cx, y, availW, fullW, h, u) {
     const pattern = code128Encode(text);
-    if (!pattern) return;
-    const modules = pattern.length;
-    const moduleW = w / modules;
-    let cx = x;
+    if (!pattern) return null;
+    // 展开为条/空游程，统计总模块数（Code128 每游程 1~4 模块）
+    const runs = [];
+    let modules = 0;
     let isBar = true;
-    for (let i = 0; i < modules; i++) {
-      const width = parseInt(pattern[i]) * moduleW;
-      if (isBar) { ctx.fillStyle = "#000"; ctx.fillRect(cx, y, width, h); }
-      cx += width;
+    for (let i = 0; i < pattern.length; i++) {
+      const n = pattern.charCodeAt(i) - 48;
+      runs.push({ bar: isBar, n });
+      modules += n;
       isBar = !isBar;
     }
+    const QUIET = 6;
+    const floorM = Math.max(1, Math.ceil(0.25 * u - 1e-9)); // 物理最窄条 ≥0.25mm
+    // 优先：最大整数模块宽且左右各留 6 模块静区
+    let m = Math.floor(availW / (modules + 2 * QUIET));
+    if (m < floorM) m = floorM;     // 0.25mm 保底优先，静区相应收缩
+    if (modules * m > fullW) {      // 极端长码：整幅标签仍放不下才退回适配宽度
+      m = Math.max(1, Math.floor(fullW / modules));
+    }
+    const barW = modules * m;
+    let x = Math.round(cx - barW / 2);
+    ctx.fillStyle = "#000";
+    for (const r of runs) {
+      if (r.bar) ctx.fillRect(x, y, r.n * m, h);
+      x += r.n * m;
+    }
+    return m;
   }
 
   function fitText(ctx, text, maxW, startSize, bold, minSize) {
@@ -489,11 +514,11 @@
   // Canvas 标签渲染
   // ==========================================================================
 
-  /** 渲染瓶签，返回 dataURL */
+  /** 渲染瓶签，返回 dataURL（v3.7 默认 40×20mm） */
   function renderLabel(item, cfg, dpi) {
     dpi = dpi || parseInt(cfg.label_dpi || "203");
-    const wMm = parseFloat(cfg.label_w_mm || "30");
-    const hMm = parseFloat(cfg.label_h_mm || "14");
+    const wMm = parseFloat(cfg.label_w_mm || "40");
+    const hMm = parseFloat(cfg.label_h_mm || "20");
     const W = Math.max(1, Math.round(wMm / 25.4 * dpi));
     const H = Math.max(1, Math.round(hMm / 25.4 * dpi));
     const u = dpi / 25.4;
@@ -526,10 +551,11 @@
     const codeY = H - mb - codeSize;
     ctx.fillText(code, (W - cw) / 2, codeY);
 
-    // 3) 条码
+    // 3) 条码：占名称与代码文字之间全部剩余高度，且不低于标签高度的 50%
     const gap = Math.max(1, Math.round(0.4 * u));
-    const barH = Math.max(3, codeY - gap - (nameBottom + gap));
-    drawBarcode(ctx, code, mx, nameBottom + gap, innerW, barH);
+    let barH = Math.max(3, codeY - gap - (nameBottom + gap));
+    barH = Math.max(barH, Math.round(0.5 * H));
+    drawBarcode(ctx, code, W / 2, nameBottom + gap, innerW, W, barH, u);
 
     return canvas.toDataURL("image/png");
   }

@@ -40,8 +40,19 @@
   const ACT_RECEIVE="入库", ACT_USE="取用", ACT_CHECKOUT="出库", ACT_RETURN="归还",
         ACT_DISCARD="作废", ACT_REPRINT="补打标签", ACT_EDIT="编辑";
 
+  // ---------- v3.7：扫码枪输入兼容（瓶号/品种码路径；品种二维码 JSON 不经过此处） ----------
+  // ① NFKC 归一（全角字母数字/兼容字符→半角）；② 去 AIM 标准前缀（]A0、]E0、]C1 等）；
+  // ③ 去空白与控制字符；④ 统一大写。
+  function normalizeScanCode(s){
+    let x=String(s==null?"":s);
+    try{ x=x.normalize("NFKC"); }catch(e){}   // 老环境无 String.prototype.normalize 时保底
+    x=x.replace(/^\][A-Za-z][0-9A-Za-z]?/,"");
+    x=x.replace(/[\s\x00-\x1f\x7f-\x9f]+/g,"");
+    return x.toUpperCase();
+  }
+
   const DEFAULT_CONFIG = {
-    warn_days:"30", label_w_mm:"30", label_h_mm:"14", label_dpi:"203",
+    warn_days:"30", label_w_mm:"40", label_h_mm:"20", label_dpi:"203",
     product_w_mm:"40", product_h_mm:"30", cfg_version:"7",
     printer:"", id_prefix:"SS", product_prefix:"P", product_seq:"0", default_open_days:"30",
     default_operator:"", locations:"", persons:"", purposes:"", units:"mL\ng\nL\nmg",
@@ -582,6 +593,7 @@
   global.XLBStore = Store;
   global.XLBDeriveName = deriveName;
   global.XLBParseQRPayload = parseQRPayload;
+  global.XLBNormalizeScanCode = normalizeScanCode;
   global.XLBHashPass = hashPass;
   global.XLBNormalizeCondBoxMap = normalizeCondBoxMap;
   global.XLBConst = {STOCK_KEYS,LOG_KEYS,PROD_KEYS,ST_IN,ST_OUT,ST_EMPTY,ST_DISCARD,ST_USED,
