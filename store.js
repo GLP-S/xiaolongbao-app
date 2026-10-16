@@ -52,8 +52,8 @@
   }
 
   const DEFAULT_CONFIG = {
-    warn_days:"30", label_w_mm:"40", label_h_mm:"20", label_dpi:"203",
-    product_w_mm:"40", product_h_mm:"30", cfg_version:"7",
+    warn_days:"30", label_w_mm:"20", label_h_mm:"10", label_dpi:"203", label_code_type:"自动",
+    product_w_mm:"40", product_h_mm:"30", cfg_version:"8",
     printer:"", id_prefix:"SS", product_prefix:"P", product_seq:"0", default_open_days:"30",
     default_operator:"", locations:"", persons:"", purposes:"", units:"mL\ng\nL\nmg",
     box_count:"20", slot_per_box:"60", bigbox_count:"20", slot_per_bigbox:"24",

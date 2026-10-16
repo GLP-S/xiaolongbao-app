@@ -103,6 +103,51 @@
     return size;
   }
 
+  // 单行文字：先缩字号，仍超宽则末尾省略号截断（与桌面端 _fit_or_ellipsize 对齐）
+  function fitOrEllipsize(ctx, text, maxW, startSize, bold, minSize) {
+    const size = fitText(ctx, text, maxW, startSize, bold, minSize);
+    let t = String(text == null ? "" : text);
+    if (ctx.measureText(t).width > maxW) {
+      while (t.length > 1 && ctx.measureText(t + "…").width > maxW) t = t.slice(0, -1);
+      t += "…";
+    }
+    return { size, text: t };
+  }
+
+  // ==========================================================================
+  // v3.8：标签码制 + 自动 DPI（与桌面端 _label_code_mode / auto_label_dpi 对齐）
+  // ==========================================================================
+  const LABEL_DPI_CHOICES = [203, 300, 600];
+  const LABEL_QR_INNER_W_MM = 26;   // 内宽低于此值时一维码最窄条 <0.2mm，自动改二维码
+  const LABEL_1D_MODULES = 146;     // 典型最长瓶号 Code128 模块数（含左右各 6 模块静区）
+  const LABEL_QR_MODULES = 29;      // 瓶号二维码模块数（版本1=21 + 静区 4×2）
+
+  /** 标签码制：'1d' / '2d'；auto（自动）时按标签内宽判定 */
+  function labelCodeMode(cfg, innerWmm) {
+    cfg = cfg || {};
+    const mode = String(cfg.label_code_type || "自动").trim().toLowerCase();
+    if (mode === "1d" || mode === "一维码" || mode === "code128") return "1d";
+    if (mode === "2d" || mode === "二维码" || mode === "qr") return "2d";
+    if (innerWmm === undefined)
+      innerWmm = Math.max(1, parseFloat(cfg.label_w_mm || "20") - 1.2);
+    return innerWmm < LABEL_QR_INNER_W_MM ? "2d" : "1d";
+  }
+
+  /** v3.8：按标签尺寸与码制自动推算渲染 DPI（设置页 DPI 框只读显示此值） */
+  function autoLabelDpi(cfg) {
+    const mode = labelCodeMode(cfg);
+    const innerW = Math.max(1, parseFloat((cfg && cfg.label_w_mm) || "20") - 1.2);
+    const innerH = Math.max(1, parseFloat((cfg && cfg.label_h_mm) || "10") - 1.0);
+    const modules = mode === "2d" ? LABEL_QR_MODULES : LABEL_1D_MODULES;
+    const span = mode === "2d" ? innerH : innerW;
+    const needPx = mode === "2d" ? 3 : 2;
+    const moduleMm = span / modules;
+    let req = needPx * 25.4 / moduleMm;
+    if (mode !== "2d") req = Math.max(req, 0.20 * 25.4 / moduleMm);
+    for (const d of LABEL_DPI_CHOICES) if (req <= d) return d;
+    return LABEL_DPI_CHOICES[LABEL_DPI_CHOICES.length - 1];
+  }
+
   // ==========================================================================
   // 纯 JS QR Code 编码器（字节模式 / UTF-8 / 自动版本 1-40 / 自动掩码）
   // 算法与表来自 ISO/IEC 18004，经主流 qrcode 管线逐位核对。
@@ -514,11 +559,76 @@
   // Canvas 标签渲染
   // ==========================================================================
 
-  /** 渲染瓶签，返回 dataURL（v3.7 默认 40×20mm） */
+  /**
+   * v3.8：窄标签瓶签版式——左侧满高二维码（静区 4 模块、模块取整数像素）+ 右侧名称/瓶号文字。
+   * 一维码在 20mm 宽标签上最窄条仅约 0.13mm 无法识别，故小标签改用二维码，扫码枪扫码即得瓶号。
+   */
+  function renderVialQR(item, cfg, dpi) {
+    const wMm = Math.max(1, parseFloat(cfg.label_w_mm || "20"));
+    const hMm = Math.max(1, parseFloat(cfg.label_h_mm || "10"));
+    const W = Math.max(1, Math.round(wMm / 25.4 * dpi));
+    const H = Math.max(1, Math.round(hMm / 25.4 * dpi));
+    const u = dpi / 25.4;
+    const canvas = document.createElement("canvas");
+    canvas.width = W; canvas.height = H;
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = "#000";
+
+    const mx = Math.max(1, Math.round(0.4 * u));
+    const mt = Math.max(1, Math.round(0.4 * u));
+    const gap = Math.max(1, Math.round(0.3 * u));
+    const code = String(item.bottle_id || "");
+
+    // 1) 二维码：正方形、占满内高；静区 4 模块，模块取整数像素
+    const qr = qrCreate(code);
+    const n = qr.size;
+    const modules = n + 8;
+    const sideAvail = Math.max(8, H - 2 * mt);
+    let mod = Math.floor(sideAvail / modules);
+    if (mod < 1) mod = 1;
+    const side = modules * mod;
+    ctx.fillStyle = "#fff"; ctx.fillRect(mx, mt, side, side);
+    ctx.fillStyle = "#000";
+    for (let r = 0; r < n; r++) {
+      for (let c = 0; c < n; c++) {
+        if (qr.data[r * n + c])
+          ctx.fillRect(mx + (c + 4) * mod, mt + (r + 4) * mod, mod, mod);
+      }
+    }
+
+    // 2) 右侧文字：名称（上）+ 瓶号（下）；右侧太窄则瓶号居中放码下方
+    ctx.textBaseline = "top";
+    const tx = mx + side + gap;
+    const tw = W - mx - tx;
+    const name = String(item.name || "");
+    if (tw >= 12) {
+      const nf = fitOrEllipsize(ctx, name, tw, Math.max(8, Math.round(2.6 * u)), true,
+                                Math.max(8, Math.round(1.8 * u)));
+      ctx.font = `bold ${nf.size}px sans-serif`;
+      ctx.fillText(nf.text, tx, mt + Math.max(0, (H - 2 * mt - nf.size - gap) / 2));
+      const cf = fitOrEllipsize(ctx, code, tw, Math.max(8, Math.round(2.4 * u)), true,
+                                Math.max(7, Math.round(1.6 * u)));
+      ctx.font = `bold ${cf.size}px monospace`;
+      ctx.fillText(cf.text, tx, H - mt - cf.size);
+    } else {
+      const cf = fitOrEllipsize(ctx, code, W - 2 * mx, Math.max(8, Math.round(2.4 * u)), true,
+                                Math.max(7, Math.round(1.5 * u)));
+      ctx.font = `bold ${cf.size}px monospace`;
+      const cw = ctx.measureText(cf.text).width;
+      ctx.fillText(cf.text, (W - cw) / 2, mt + side + gap);
+    }
+    return canvas.toDataURL("image/png");
+  }
+
+  /** 渲染瓶签，返回 dataURL（v3.8 默认 20×10mm；内宽 <26mm 自动走二维码版式） */
   function renderLabel(item, cfg, dpi) {
-    dpi = dpi || parseInt(cfg.label_dpi || "203");
-    const wMm = parseFloat(cfg.label_w_mm || "40");
-    const hMm = parseFloat(cfg.label_h_mm || "20");
+    cfg = cfg || {};
+    dpi = dpi || parseInt(cfg.label_dpi || "203") || 203;
+    const innerWmm = Math.max(1, parseFloat(cfg.label_w_mm || "20") - 1.2);
+    if (labelCodeMode(cfg, innerWmm) === "2d") return renderVialQR(item, cfg, dpi);
+    const wMm = parseFloat(cfg.label_w_mm || "20");
+    const hMm = parseFloat(cfg.label_h_mm || "10");
     const W = Math.max(1, Math.round(wMm / 25.4 * dpi));
     const H = Math.max(1, Math.round(hMm / 25.4 * dpi));
     const u = dpi / 25.4;
@@ -620,5 +730,6 @@
     return renderLabel({ name: product.name, bottle_id: product.code }, cfg, dpi);
   }
 
-  global.XLBLabel = { renderLabel, renderProductLabel, renderProductQR, code128Encode, qrCreate };
+  global.XLBLabel = { renderLabel, renderVialQR, renderProductLabel, renderProductQR, code128Encode, qrCreate,
+                      labelCodeMode, autoLabelDpi };
 })(window);

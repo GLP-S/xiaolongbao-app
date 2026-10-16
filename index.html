@@ -910,7 +910,8 @@ async function printProductSheet(code){
     if(!w){toast("请允许弹出窗口以打印");return}
     w.document.write(`<html><head><title>标准溶液管理表</title><meta charset="utf-8">
       <style>
-      body{font-family:"Microsoft YaHei","PingFang SC",sans-serif;margin:18px;color:#000}
+      @page{size:A4;margin:12mm}
+      body{font-family:"Microsoft YaHei","PingFang SC",sans-serif;margin:0;color:#000}
       h2{text-align:center;margin:0 0 4px} .sub{text-align:center;color:#333;font-size:12px;margin-bottom:10px}
       .info{display:grid;grid-template-columns:1fr 1fr;gap:4px 24px;font-size:13px;margin-bottom:10px}
       table{width:100%;border-collapse:collapse;font-size:12px}
