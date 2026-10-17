@@ -144,8 +144,8 @@ textarea{resize:vertical;min-height:60px}
 .modal h3{margin:0 0 12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .dual{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:14px}
 .codebox{background:#fff;border-radius:12px;padding:10px;text-align:center}
-.codebox .cap{color:#333;font-size:12px;font-weight:800;margin-bottom:6px}
-.codebox img{max-width:100%;max-height:190px}
+.codebox .cap{color:#333;font-size:11px;font-weight:800;margin-bottom:4px;word-break:break-all}
+.codebox img{max-width:100%;max-height:150px}
 .codebox .pending{color:#888;font-size:12px}
 @media(max-width:480px){.dual{grid-template-columns:1fr}}
 /* ---------- 复选胶囊 ---------- */
@@ -576,8 +576,27 @@ function pageScan(box){
   return{reload(){}};
 }
 
+/* v3.9：打印前确认框（打印 / 取消）——网页端无法枚举打印机，
+   选择具体打印机由系统打印对话框完成，确认后即调起打印 */
+function confirmPrint(msg){
+  return new Promise(resolve=>{
+    const mask=el("div","mask");
+    const m=el("div","modal",`<h3>打印确认</h3>
+      <div class="hint">${esc(msg)}<br>确认后将调起系统打印对话框，可在其中选择打印机。</div>
+      <div class="actions">
+        <button class="btn" id="cp_ok">打印</button>
+        <button class="btn secondary" id="cp_no">取消</button></div>`);
+    mask.appendChild(m);document.body.appendChild(mask);
+    const done=v=>{mask.remove();resolve(v)};
+    mask.addEventListener("click",e=>{if(e.target===mask)done(false)});
+    q(m,"#cp_ok").onclick=()=>done(true);
+    q(m,"#cp_no").onclick=()=>done(false);
+  });
+}
+
 /* 补打标签：本地渲染瓶签 dataURL → 新窗口打印 */
 async function doReprint(bid){
+  if(!await confirmPrint("即将补打该瓶标签（瓶识别码）。"))return;
   try{
     const j=await api("/api/label_data/"+encodeURIComponent(bid));
     if(j&&j.image){printImages([j.image])}else toast("未取得标签图片");
@@ -671,7 +690,7 @@ async function buildForm(box,f){
     </div>
     <label class="fld"><span>备注</span><textarea id="r_note"></textarea></label>
     <div class="actions">
-      <button class="btn" id="saveprint">保存并打印标签</button>
+      <button class="btn" id="saveprint">打印标签</button>
       <button class="btn secondary" id="saveonly">仅保存</button></div>`;
 
   /* 名称派生 */
@@ -800,11 +819,8 @@ async function buildForm(box,f){
     try{
       const j=await apiWrite("/api/receive",{...form,qty});
       toast(`入库成功：${j.bottle_ids.length} 瓶`);
-      /* v3.2：入库生成品种码/瓶码的同时，自动生成该品种《标准溶液管理表》
-         （同品种全部瓶明细，A4 可打印），可直接连接打印机打印 */
-      if(confirm(`已自动生成品种 ${j.product_code} 的《标准溶液管理表》\n（同品种全部瓶明细，A4 可打印）。\n\n是否立即连接打印机打印？`)){
-        printProductSheet(j.product_code);
-      }
+      /* v3.9：入库仅打印标签（品种码 + 瓶识别码）；《标准溶液管理表》
+         改由库存查询「管理表打印」独立触发，不再每次保存都弹管理表打印确认 */
       if(printAfter){
         const images=[];
         try{
@@ -840,7 +856,7 @@ function pageStock(box){
         <option value="已出库">已出库</option>
         <option value="已作废">已作废</option></select>
       <button class="btn" id="f_sbtn">查询</button></div>
-    <div class="hint">点击任意一行查看详情：弹窗同时显示品种二维码与瓶码条形码。</div>
+    <div class="hint">点击任意一行查看详情：弹窗同时显示品种二维码与瓶识别码。</div>
     <div class="tbl-wrap" id="f_sres"></div>`;
   async function load(){
     const kw=q(box,"#f_sq").value,s=q(box,"#f_sst").value;
@@ -899,6 +915,7 @@ function pageStock(box){
 /* v3.1：标准溶液管理表打印（同一品种码：品种档案 + 全部瓶明细，浏览器打印） */
 async function printProductSheet(code){
   if(!code){toast("该瓶缺少品种码");return}
+  if(!await confirmPrint(`即将打印品种 ${code} 的《标准溶液管理表》。`))return;
   try{
     const j=await api("/api/product_sheet?code="+encodeURIComponent(code));
     const p=j.product||{},rows=j.bottles||[];
@@ -935,7 +952,7 @@ async function printProductSheet(code){
   }catch(e){toast(e.message)}
 }
 
-/* 库存详情弹窗：品种二维码 + 瓶码条形码（双码） */
+/* 库存详情弹窗：品种二维码 + 瓶识别码（双码） */
 function openItemModal(it){
   const mask=el("div","mask");
   const m=el("div","modal",`<h3>${esc(it.name)}
@@ -959,7 +976,7 @@ function openItemModal(it){
       <span class="k">备注</span><span class="v">${esc(it.note)||"—"}</span></div>
     <div class="dual">
       <div class="codebox"><div class="cap">品种二维码</div><div id="dq_qr"><span class="pending">生成中…</span></div></div>
-      <div class="codebox"><div class="cap">瓶码条形码</div><div id="dq_bar"><span class="pending">生成中…</span></div></div>
+      <div class="codebox"><div class="cap">瓶识别码</div><div id="dq_bar"><span class="pending">生成中…</span></div></div>
     </div>
     <div class="actions">
       <button class="btn" id="dq_reprint">补打标签</button>
