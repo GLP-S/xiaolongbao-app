@@ -114,13 +114,42 @@
     return { size, text: t };
   }
 
+  // v3.9：按像素宽度逐字换行（对无空格的编号串同样适用，不丢字符）
+  function wrapText(ctx, text, maxW) {
+    const t = String(text == null ? "" : text);
+    const lines = [];
+    let cur = "";
+    for (const ch of t) {
+      if (!cur || ctx.measureText(cur + ch).width <= maxW) cur += ch;
+      else { lines.push(cur); cur = ch; }
+    }
+    if (cur) lines.push(cur);
+    return lines;
+  }
+
+  // v3.9：缩小字号直到换行后的文本块高度 <= maxH；到 minSize 仍放不下也全部换行
+  // （绝不省略号截断或溢出裁切）。返回 {size, lines, height}。
+  function fitWrapped(ctx, text, maxW, maxH, startSize, bold, minSize, family) {
+    family = family || "sans-serif";
+    let size = startSize;
+    for (;;) {
+      ctx.font = `${bold ? "bold " : ""}${size}px ${family}`;
+      const lines = wrapText(ctx, text, maxW);
+      const h = lines.length * (size + 1);
+      if (h <= maxH || size <= minSize) return { size, lines, height: h };
+      size -= 0.5;
+    }
+  }
+
   // ==========================================================================
   // v3.8：标签码制 + 自动 DPI（与桌面端 _label_code_mode / auto_label_dpi 对齐）
   // ==========================================================================
   const LABEL_DPI_CHOICES = [203, 300, 600];
   const LABEL_QR_INNER_W_MM = 26;   // 内宽低于此值时一维码最窄条 <0.2mm，自动改二维码
   const LABEL_1D_MODULES = 146;     // 典型最长瓶号 Code128 模块数（含左右各 6 模块静区）
-  const LABEL_QR_MODULES = 29;      // 瓶号二维码模块数（版本1=21 + 静区 4×2）
+  const LABEL_QR_BORDER = 2;        // v3.9：二维码内置静区模块数（标签白边另补外层静区），
+                                    // 由 4 减到 2 后模块总数 29→25，同尺寸下单模块更大更易识别
+  const LABEL_QR_MODULES = 21 + 2 * LABEL_QR_BORDER;  // 瓶号二维码模块数（版本1=21 + 静区 2×2 = 25）
 
   /** 标签码制：'1d' / '2d'；auto（自动）时按标签内宽判定 */
   function labelCodeMode(cfg, innerWmm) {
@@ -560,8 +589,9 @@
   // ==========================================================================
 
   /**
-   * v3.8：窄标签瓶签版式——左侧满高二维码（静区 4 模块、模块取整数像素）+ 右侧名称/瓶号文字。
-   * 一维码在 20mm 宽标签上最窄条仅约 0.13mm 无法识别，故小标签改用二维码，扫码枪扫码即得瓶号。
+   * v3.9：窄标签瓶签版式——左侧二维码（内置静区 LABEL_QR_BORDER 模块，标签白边另补外层静区，
+   * 模块总数 29→25，同尺寸下单模块更大）+ 右侧名称/瓶号，超长自动换行、缩字，绝不截断。
+   * 一维码在 20mm 宽标签上最窄条仅约 0.13mm 无法识别，故小标签改用二维码，扫码枪扫即得瓶号。
    */
   function renderVialQR(item, cfg, dpi) {
     const wMm = Math.max(1, parseFloat(cfg.label_w_mm || "20"));
@@ -580,43 +610,54 @@
     const gap = Math.max(1, Math.round(0.3 * u));
     const code = String(item.bottle_id || "");
 
-    // 1) 二维码：正方形、占满内高；静区 4 模块，模块取整数像素
+    // 1) 二维码：正方形、垂直居中；静区 LABEL_QR_BORDER 模块（标签白边补足外层），模块取整数像素
     const qr = qrCreate(code);
     const n = qr.size;
-    const modules = n + 8;
+    const modules = n + 2 * LABEL_QR_BORDER;
     const sideAvail = Math.max(8, H - 2 * mt);
     let mod = Math.floor(sideAvail / modules);
     if (mod < 1) mod = 1;
     const side = modules * mod;
-    ctx.fillStyle = "#fff"; ctx.fillRect(mx, mt, side, side);
+    const qy = Math.floor((H - side) / 2);
+    ctx.fillStyle = "#fff"; ctx.fillRect(mx, qy, side, side);
     ctx.fillStyle = "#000";
     for (let r = 0; r < n; r++) {
       for (let c = 0; c < n; c++) {
         if (qr.data[r * n + c])
-          ctx.fillRect(mx + (c + 4) * mod, mt + (r + 4) * mod, mod, mod);
+          ctx.fillRect(mx + (c + LABEL_QR_BORDER) * mod, qy + (r + LABEL_QR_BORDER) * mod, mod, mod);
       }
     }
 
-    // 2) 右侧文字：名称（上）+ 瓶号（下）；右侧太窄则瓶号居中放码下方
+    // 2) 右侧文字：名称（上）+ 瓶号（下），按列宽自动换行并缩字，不再省略号/溢出截断
     ctx.textBaseline = "top";
     const tx = mx + side + gap;
     const tw = W - mx - tx;
     const name = String(item.name || "");
-    if (tw >= 12) {
-      const nf = fitOrEllipsize(ctx, name, tw, Math.max(8, Math.round(2.6 * u)), true,
-                                Math.max(8, Math.round(1.8 * u)));
+    const availH = H - 2 * mt;
+    if (tw >= Math.max(10, Math.round(2.5 * u))) {
+      const nameH = Math.floor(availH * 0.55);
+      const codeH = Math.max(1, availH - nameH - gap);
+      const nf = fitWrapped(ctx, name, tw, nameH, Math.max(8, Math.round(2.4 * u)), true,
+                            Math.max(7, Math.round(1.4 * u)), "sans-serif");
       ctx.font = `bold ${nf.size}px sans-serif`;
-      ctx.fillText(nf.text, tx, mt + Math.max(0, (H - 2 * mt - nf.size - gap) / 2));
-      const cf = fitOrEllipsize(ctx, code, tw, Math.max(8, Math.round(2.4 * u)), true,
-                                Math.max(7, Math.round(1.6 * u)));
+      let y = mt;
+      for (const ln of nf.lines) { ctx.fillText(ln, tx, y); y += nf.size + 1; }
+      const cf = fitWrapped(ctx, code, tw, codeH, Math.max(8, Math.round(2.2 * u)), true,
+                            Math.max(7, Math.round(1.3 * u)), "monospace");
       ctx.font = `bold ${cf.size}px monospace`;
-      ctx.fillText(cf.text, tx, H - mt - cf.size);
+      y = H - mt - cf.height;
+      for (const ln of cf.lines) { ctx.fillText(ln, tx, y); y += cf.size + 1; }
     } else {
-      const cf = fitOrEllipsize(ctx, code, W - 2 * mx, Math.max(8, Math.round(2.4 * u)), true,
-                                Math.max(7, Math.round(1.5 * u)));
+      const cf = fitWrapped(ctx, code, W - 2 * mx, Math.max(8, H - mt - side - gap),
+                            Math.max(8, Math.round(2.2 * u)), true,
+                            Math.max(7, Math.round(1.4 * u)), "monospace");
       ctx.font = `bold ${cf.size}px monospace`;
-      const cw = ctx.measureText(cf.text).width;
-      ctx.fillText(cf.text, (W - cw) / 2, mt + side + gap);
+      let y = mt + side + gap;
+      for (const ln of cf.lines) {
+        const cw = ctx.measureText(ln).width;
+        ctx.fillText(ln, (W - cw) / 2, y);
+        y += cf.size + 1;
+      }
     }
     return canvas.toDataURL("image/png");
   }
