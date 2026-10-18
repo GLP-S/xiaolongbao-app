@@ -189,7 +189,7 @@ textarea{resize:vertical;min-height:60px}
 <script>
 "use strict";
 /* ================= 常量 ================= */
-const APP_VERSION="3.10";
+const APP_VERSION="3.11";
 const ICONS={
   inout:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.3 7 12 12l8.7-5"/><path d="M12 22V12"/></svg>',
   query:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>',
@@ -642,7 +642,7 @@ function pageManual(box){
     if(it.status!=="在库"){toast(`该瓶状态为「${it.status}」，只有在库瓶才能出库`);return}
     const person=prompt(`确认整瓶出库：\n${it.bottle_id}  ${it.name}\n\n请输入领用人：`,
       state.user||"");
-    if(person===null)return;
+    if(person===null){msg.textContent=`${it.bottle_id} 未出库（已取消，未填写领用人）`;return}
     try{
       await apiWrite("/api/issue",{bottle_id:it.bottle_id,action:"out",
         person:person.trim()||"手动出库",purpose:"手动出库",operator:state.user,

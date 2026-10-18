@@ -334,10 +334,11 @@
       return free.slice(0,n);
     }
 
-    // ---- 瓶号 ----
+    // ---- 瓶号（v3.11：前缀+月+日+3位流水，如 SS1018008）----
     newBottleId(){
       const prefix=(this.config.id_prefix||"SS").trim()||"SS";
-      const d=new Date(); const t=`${d.getFullYear()%100}${String(d.getMonth()+1).padStart(2,"0")}${String(d.getDate()).padStart(2,"0")}`;
+      const d=new Date();
+      const t=`${String(d.getMonth()+1).padStart(2,"0")}${String(d.getDate()).padStart(2,"0")}`;
       const head=prefix+t;
       let seq=1;
       for(const bid in this.items){
