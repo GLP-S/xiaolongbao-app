@@ -11,11 +11,13 @@
     "prod_date","exp_date","open_date","open_limit","open_exp_date","init_amount","amount",
     "unit","location","status","in_date","operator","project_no","solvent","note",
     "std_name","glp_type","expire_date","storage_cond","storage_place","volume_unit","dept"];
-  const LOG_KEYS = ["log_id","time","bottle_id","name","action","qty","unit","person","purpose","operator","note","dept"];
+  const LOG_KEYS = ["log_id","time","bottle_id","name","action","source","qty","unit","person","purpose","operator","note","dept"];
   const PROD_KEYS = ["code","name","std_id","conc","batch","unit","first_date","std_name","glp_type",
     "storage_cond","storage_place","dept"];
 
   const ST_IN="在库", ST_OUT="已出库", ST_EMPTY="已用尽", ST_DISCARD="已作废", ST_USED="已取用";
+  // v3.10：出入库方式（流水“出入库方式”列的取值）
+  const SRC_SCAN="扫码出入库", SRC_MANUAL="手动出入库";
 
   // ---------- 溶液名称自动派生（v2.2：名称只读，由 编号-浓度/规格单位-批号 整合） ----------
   // 紧凑式，例：GBW06103-0.1000mol/L-0001（浓度去空格）
@@ -345,11 +347,13 @@
     }
 
     // ---- 流水 ----
-    _log(bottleId, action, {qty="", unit="", person="", purpose="", operator="", note=""}={}){
+    _log(bottleId, action, {qty="", unit="", person="", purpose="", operator="", note="", source=""}={}){
       const it=this.items[bottleId]||{};
       this.logs.push({
         log_id:`LOG${new Date().toISOString().replace(/[-:T]/g,"").slice(2,14)}-${String(this.logs.length+1).padStart(5,"0")}`,
-        time:nowStr(), bottle_id:bottleId, name:it.name||"", action, qty, unit, person, purpose, operator, note,
+        time:nowStr(), bottle_id:bottleId, name:it.name||"", action,
+        source,   // v3.10：扫码出入库 / 手动出入库
+        qty, unit, person, purpose, operator, note,
         dept:this.curDept()
       });
     }
@@ -381,7 +385,7 @@
     }
 
     // ---- 入库 ----
-    receive(form, {commit=true, note="入库", productCode=null, location=null}={}){
+    receive(form, {commit=true, note="入库", productCode=null, location=null, source=SRC_MANUAL}={}){
       const bid=form.bottle_id||this.newBottleId();
       if(this.items[bid]) throw new Error(`瓶号 ${bid} 已存在，不能重复入库`);
       const stdId=(form.std_id||"").trim();
@@ -457,12 +461,12 @@
           this.config.persons = cur ? (cur+"\n"+who).trim() : who;
         }
       }
-      this._log(bid, ACT_RECEIVE, {qty:1, unit:"瓶", operator:item.operator, note:note||"入库"});
+      this._log(bid, ACT_RECEIVE, {qty:1, unit:"瓶", operator:item.operator, note:note||"入库", source});
       if(commit) this.save();
       return bid;
     }
 
-    receiveBatch(form, n){
+    receiveBatch(form, n, source=SRC_MANUAL){
       n=parseInt(n);
       if(n<1) throw new Error("入库数量至少为 1 瓶");
       if(n>999) throw new Error("单次入库数量不能超过 999 瓶");
@@ -497,7 +501,7 @@
       for(let i=0;i<n;i++){
         const f={...form, exp_date:dateStr(exp)};
         const loc = locs.length ? locs[i] : "";
-        const bid=this.receive(f, {commit:false, note:`批量入库第${i+1}瓶`, location:loc});
+        const bid=this.receive(f, {commit:false, note:`批量入库第${i+1}瓶`, location:loc, source});
         bids.push(bid);
       }
       this.save();
@@ -505,19 +509,19 @@
     }
 
     // ---- 取用 / 出库 ----
-    use(bid, qty, person, purpose, operator, {emptied=false, note=""}={}){
+    use(bid, qty, person, purpose, operator, {emptied=false, note="", source=SRC_SCAN}={}){
       const it=this._getInStock(bid);
-      this._log(bid, ACT_USE, {qty:qty||"", unit:it.unit||"", person, purpose, operator, note:note||"取用"});
+      this._log(bid, ACT_USE, {qty:qty||"", unit:it.unit||"", person, purpose, operator, note:note||"取用", source});
       if(emptied){ it.status=ST_EMPTY; it.open_date=todayStr(); }
       this.save();
     }
-    checkout(bid, person, purpose, operator, note=""){
+    checkout(bid, person, purpose, operator, note="", source=SRC_SCAN){
       const it=this._getInStock(bid);
       it.status=ST_OUT;
-      this._log(bid, ACT_CHECKOUT, {person, purpose, operator, note:note||"出库"});
+      this._log(bid, ACT_CHECKOUT, {person, purpose, operator, note:note||"出库", source});
       this.save();
     }
-    returnBack(bid, opened, openDate, operator, note=""){
+    returnBack(bid, opened, openDate, operator, note="", source=SRC_SCAN){
       const it=this.items[bid];
       if(!it) throw new Error(`瓶号 ${bid} 不存在`);
       if(it.status===ST_DISCARD) throw new Error("该瓶已作废，不能归还");
@@ -528,22 +532,22 @@
         it.open_limit=`${limit}天`;
         it.open_exp_date=dateStr(addDays(toDate(it.open_date), parseInt(limit)));
       }
-      this._log(bid, ACT_RETURN, {operator, note:note||"归还"});
+      this._log(bid, ACT_RETURN, {operator, note:note||"归还", source});
       this.save();
     }
     discard(bid, reason, operator){
       const it=this.items[bid];
       if(!it) throw new Error(`瓶号 ${bid} 不存在`);
       it.status=ST_DISCARD;
-      this._log(bid, ACT_DISCARD, {operator, note:reason||"作废"});
+      this._log(bid, ACT_DISCARD, {operator, note:reason||"作废", source:SRC_MANUAL});
       this.save();
     }
-    reprintLog(bid, operator){ this._log(bid, ACT_REPRINT, {operator}); this.save(); }
+    reprintLog(bid, operator){ this._log(bid, ACT_REPRINT, {operator, source:SRC_MANUAL}); this.save(); }
     modify(bid, changes, operator){
       const it=this.items[bid];
       if(!it) throw new Error(`瓶号 ${bid} 不存在`);
       for(const k in changes){ if(k in it && changes[k]!==undefined) it[k]=changes[k]; }
-      this._log(bid, ACT_EDIT, {operator, note:"编辑"});
+      this._log(bid, ACT_EDIT, {operator, note:"编辑", source:SRC_MANUAL});
       this.save();
     }
 
@@ -597,5 +601,6 @@
   global.XLBHashPass = hashPass;
   global.XLBNormalizeCondBoxMap = normalizeCondBoxMap;
   global.XLBConst = {STOCK_KEYS,LOG_KEYS,PROD_KEYS,ST_IN,ST_OUT,ST_EMPTY,ST_DISCARD,ST_USED,
+    SRC_SCAN,SRC_MANUAL,
     ACT_RECEIVE,ACT_USE,ACT_CHECKOUT,ACT_RETURN,ACT_DISCARD,ACT_REPRINT,ACT_EDIT,DEFAULT_CONFIG,ALL_PERMS};
 })(window);

@@ -74,6 +74,9 @@ hr.sep{border:none;border-top:1px solid var(--line);margin:16px 0}
 .btn-sm{padding:7px 12px;border-radius:10px;font-size:13px;box-shadow:0 3px 0 var(--green-dd)}
 .btn-sm:active{transform:translateY(2px);box-shadow:0 1px 0 var(--green-dd)}
 .btn:disabled{opacity:.45;cursor:not-allowed}
+/* v3.10：手动出入库按钮——宽度 25mm、高度 15mm */
+.man-btn{width:25mm;height:15mm;padding:0;font-size:14px;
+  display:inline-flex;align-items:center;justify-content:center}
 .actions{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
 /* ---------- 表单 ---------- */
 input,select,textarea{background:var(--bg2);border:1px solid var(--line);color:var(--text);
@@ -186,7 +189,7 @@ textarea{resize:vertical;min-height:60px}
 <script>
 "use strict";
 /* ================= 常量 ================= */
-const APP_VERSION="3.7";
+const APP_VERSION="3.10";
 const ICONS={
   inout:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.3 7 12 12l8.7-5"/><path d="M12 22V12"/></svg>',
   query:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>',
@@ -197,6 +200,7 @@ const ICONS={
 const TABS=[
   {key:"inout",name:"出入库",funcs:[
     {key:"scan",name:"扫码出入库"},
+    {key:"manual",name:"手动出入库"},
     {key:"receive",name:"入库登记"}]},
   {key:"query",name:"查询",funcs:[
     {key:"stock",name:"库存查询"},
@@ -573,6 +577,81 @@ function pageScan(box){
       }catch(err){toast(err.message)}
     });
   }
+  return{reload(){}};
+}
+
+/* ================= 页面：手动出入库（v3.10：无需扫码枪） ================= */
+function pageManual(box){
+  box.innerHTML=`<div class="panel"><h3>手动出入库（无需扫码枪）</h3>
+      <div class="hint">手动输入或粘贴瓶号后操作：点「入库」把“已出库/已取用”的瓶归还回库存；
+        点「出库」把在库瓶整瓶出库。</div>
+      <div class="searchbar" style="margin-top:10px">
+        <input id="f_mbid" placeholder="手动输入瓶号 / 粘贴瓶码" autocomplete="off">
+        <button class="btn" id="f_mbq">查询</button></div>
+      <div id="f_mbres"></div>
+      <div class="actions">
+        <button class="btn man-btn" id="f_mbin">入库</button>
+        <button class="btn man-btn danger" id="f_mbout">出库</button></div>
+      <div class="hint" id="f_mbmsg"></div>
+    </div>`;
+  const inp=q(box,"#f_mbid"),res=q(box,"#f_mbres"),msg=q(box,"#f_mbmsg");
+  let cur=null;
+  function code(){const raw=inp.value.trim();if(!raw)return "";return resolveScan(raw).code}
+  async function lookup(){
+    const c=code();
+    if(!c){toast("请先输入瓶号");return null}
+    try{
+      const j=await api("/api/scan",{method:"POST",body:JSON.stringify({code:c})});
+      if(j.type!=="bottle"){
+        res.innerHTML=`<div class="hint" style="color:var(--warn)">该码不是瓶识别码</div>`;
+        cur=null;return null;
+      }
+      cur=j.item;
+      res.innerHTML=`<div class="panel"><h3>${esc(cur.name)}
+          <span class="tag ${tagCls(cur.status)}">${esc(cur.status)}</span></h3>
+        <div class="kv">
+          <span class="k">瓶号</span><span class="v">${esc(cur.bottle_id)}</span>
+          <span class="k">浓度</span><span class="v">${esc(cur.conc)} ${esc(cur.unit)}</span>
+          <span class="k">批号</span><span class="v">${esc(cur.batch)}</span>
+          <span class="k">库位</span><span class="v">${esc(cur.location||"—")}</span>
+          <span class="k">有效期至</span><span class="v">${esc(cur.exp_date)}</span></div></div>`;
+      return cur;
+    }catch(e){toast(e.message);cur=null;return null}
+  }
+  q(box,"#f_mbq").onclick=lookup;
+  inp.addEventListener("keydown",e=>{if(e.key==="Enter")lookup()});
+  setTimeout(()=>inp.focus(),60);
+
+  q(box,"#f_mbin").onclick=async()=>{
+    const it=(cur&&cur.bottle_id===code())?cur:await lookup();
+    if(!it)return;
+    if(it.status!=="已出库"&&it.status!=="已取用"){
+      toast(`该瓶状态为「${it.status}」，只有已出库/已取用的瓶才能归还入库`);return}
+    const opened=confirm(`确认归还入库：\n${it.bottle_id}  ${it.name}\n\n该瓶是否首次开封？`);
+    try{
+      await apiWrite("/api/return",{bottle_id:it.bottle_id,opened:!!opened,
+        operator:state.user,source:"手动出入库"});
+      msg.textContent=`已入库：${it.bottle_id}  ${it.name}`;
+      toast("手动入库成功");
+      inp.value="";res.innerHTML="";cur=null;
+    }catch(e){toast(e.message)}
+  };
+  q(box,"#f_mbout").onclick=async()=>{
+    const it=(cur&&cur.bottle_id===code())?cur:await lookup();
+    if(!it)return;
+    if(it.status!=="在库"){toast(`该瓶状态为「${it.status}」，只有在库瓶才能出库`);return}
+    const person=prompt(`确认整瓶出库：\n${it.bottle_id}  ${it.name}\n\n请输入领用人：`,
+      state.user||"");
+    if(person===null)return;
+    try{
+      await apiWrite("/api/issue",{bottle_id:it.bottle_id,action:"out",
+        person:person.trim()||"手动出库",purpose:"手动出库",operator:state.user,
+        note:"手动出库",source:"手动出入库"});
+      msg.textContent=`已出库：${it.bottle_id}  ${it.name}`;
+      toast("手动出库成功");
+      inp.value="";res.innerHTML="";cur=null;
+    }catch(e){toast(e.message)}
+  };
   return{reload(){}};
 }
 
@@ -1039,10 +1118,11 @@ function pageLogs(box){
     }
     wrap.innerHTML="";
     const tb=el("table","tbl",`<thead><tr>
-      <th>时间</th><th>瓶号</th><th>名称</th><th>操作</th>
+      <th>时间</th><th>瓶号</th><th>名称</th><th>操作</th><th>出入库方式</th>
       <th>操作人</th><th>备注</th></tr></thead><tbody>
       ${logs.map(l=>`<tr><td>${esc(l.time)}</td><td>${esc(l.bottle_id)}</td>
       <td>${esc(l.name)}</td><td>${esc(l.action)}</td>
+      <td>${esc(l.source||"—")}</td>
       <td>${esc(l.operator)}</td><td>${esc(l.note)}</td></tr>`).join("")}
       </tbody>`);
     wrap.appendChild(tb);
@@ -1052,8 +1132,8 @@ function pageLogs(box){
   q(box,"#f_lexp").onclick=async()=>{
     const logs=deptVisible(await api("/api/logs"));   /* v3.5：导出同样按部门过滤 */
     if(!logs.length){toast("无数据可导出");return}
-    const headers=["流水号","时间","瓶号","标准溶液编号","操作类型","数量","单位","领用人","用途","经办人","备注","部门"];
-    const keys=["log_id","time","bottle_id","name","action","qty","unit","person","purpose","operator","note","dept"];
+    const headers=["流水号","时间","瓶号","标准溶液编号","操作类型","出入库方式","数量","单位","领用人","用途","经办人","备注","部门"];
+    const keys=["log_id","time","bottle_id","name","action","source","qty","unit","person","purpose","operator","note","dept"];
     let csv="\uFEFF"+headers.join(",")+"\n";
     for(const l of logs){
       csv+=keys.map(k=>`"${String(l[k]||"").replace(/"/g,'""')}"`).join(",")+"\n";
@@ -1429,7 +1509,7 @@ function pageBoxes(box){
 
 /* ================= 页面注册表 ================= */
 const VIEWS={
-  scan:pageScan,receive:pageReceive,stock:pageStock,logs:pageLogs,
+  scan:pageScan,manual:pageManual,receive:pageReceive,stock:pageStock,logs:pageLogs,
   stocktake:pageStocktake,settings:pageSettings,users:pageUsers,boxes:pageBoxes
 };
 

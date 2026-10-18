@@ -240,14 +240,16 @@
       case "issue": {
         requirePerm("inout");
         const { action, bottle_id, qty, person, purpose, operator, emptied, note } = body;
+        // v3.10：出入库方式（缺省视为扫码出入库）
+        const source = body.source || "扫码出入库";
         const it = s.items[bottle_id];
         if (action === "use") {
-          s.use(bottle_id, qty, person, purpose, operator, { emptied: !!emptied, note });
+          s.use(bottle_id, qty, person, purpose, operator, { emptied: !!emptied, note, source });
           dtNotify("整瓶取用", it && it.name,
             [["瓶号", bottle_id], ["领用人", person], ["用途/项目", purpose],
              ["备注", note]], opUser(operator));
         } else if (action === "checkout" || action === "out") {
-          s.checkout(bottle_id, person, purpose, operator, note);
+          s.checkout(bottle_id, person, purpose, operator, note, source);
           dtNotify("整瓶出库", it && it.name,
             [["瓶号", bottle_id], ["领用人", person], ["用途/项目", purpose],
              ["备注", note]], opUser(operator));
@@ -258,7 +260,8 @@
       case "return": {
         requirePerm("inout");
         const { bottle_id, opened, open_date, operator, note } = body;
-        s.returnBack(bottle_id, opened, open_date, operator, note);
+        s.returnBack(bottle_id, opened, open_date, operator, note,
+                     body.source || "扫码出入库");
         dtNotify("归还入库", s.items[bottle_id] && s.items[bottle_id].name,
           [["瓶号", bottle_id], ["已开封", opened ? "是" : "否"],
            ["备注", note]], opUser(operator));
