@@ -18,6 +18,8 @@
 <script src="dingtalk.js"></script>
 <script src="api_local.js"></script>
 <script src="bluetooth_print.js"></script>
+<script src="zxing.umd.min.js"></script>
+<script src="camera_scan.js"></script>
 <style>
 :root{
   --bg:#2B2F33; --bg2:#24282C; --panel:#34393F; --panel2:#3C4249;
@@ -163,6 +165,24 @@ textarea{resize:vertical;min-height:60px}
 .boxrow{display:grid;grid-template-columns:1fr 104px 72px 72px 42px;gap:8px;
   align-items:center;padding:4px 8px}
 @media(max-width:480px){.boxrow{grid-template-columns:1fr 88px 60px 60px 38px}}
+/* ---------- v3.12 摄像头扫码（平板自带相机代替扫码枪） ---------- */
+.cam-btn{flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;
+  width:48px;padding:0;color:var(--green)}
+.cam-btn svg{width:20px;height:20px}
+.cam-layer{position:fixed;inset:0;z-index:400;background:#101214;display:flex;flex-direction:column}
+.cam-top{display:flex;align-items:center;gap:10px;padding:12px 14px;background:rgba(20,23,26,.92);
+  padding-top:calc(12px + env(safe-area-inset-top))}
+.cam-top .t{flex:1;font-size:14px;font-weight:700;color:var(--text)}
+.cam-view{flex:1;position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center}
+.cam-view video{max-width:100%;max-height:100%;object-fit:contain}
+.cam-frame{position:absolute;width:min(78vw,420px);height:min(36vh,220px);
+  border:2px solid rgba(143,188,143,.9);border-radius:12px;
+  box-shadow:0 0 0 2000px rgba(8,10,12,.35);pointer-events:none}
+.cam-flash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none;
+  transition:opacity .12s}
+.cam-foot{padding:12px 14px calc(12px + env(safe-area-inset-bottom));background:rgba(20,23,26,.92);
+  display:flex;gap:10px;align-items:center}
+.cam-foot .st{flex:1;font-size:12px;color:var(--muted);line-height:1.6;word-break:break-all}
 /* ---------- toast ---------- */
 .toast{position:fixed;top:18px;left:50%;transform:translateX(-50%);background:#1E2226;
   border:1px solid var(--green-d);color:var(--text);padding:10px 18px;border-radius:12px;
@@ -189,7 +209,7 @@ textarea{resize:vertical;min-height:60px}
 <script>
 "use strict";
 /* ================= 常量 ================= */
-const APP_VERSION="3.11";
+const APP_VERSION="3.12";
 const ICONS={
   inout:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.3 7 12 12l8.7-5"/><path d="M12 22V12"/></svg>',
   query:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>',
@@ -476,8 +496,10 @@ async function maybeDefaultServer(){
 function pageScan(box){
   box.innerHTML=`<div class="searchbar">
       <input id="f_scan" placeholder="扫码枪扫描瓶码 / 品种二维码" autocomplete="off">
+      <button class="btn secondary cam-btn" id="f_cam" title="摄像头扫码" aria-label="摄像头扫码">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg></button>
       <button class="btn" id="f_scanbtn">查询</button></div>
-    <div class="hint">在库瓶可整瓶取用 / 出库；已出库或已取用瓶扫码后直接归还入库。</div>
+    <div class="hint">在库瓶可整瓶取用 / 出库；已出库或已取用瓶扫码后直接归还入库。无扫码枪时，可点输入框旁的相机按钮用平板摄像头扫码。</div>
     <div id="f_scanres"></div>`;
   const inp=q(box,"#f_scan"),res=q(box,"#f_scanres");
   async function run(){
@@ -493,6 +515,9 @@ function pageScan(box){
     inp.focus();
   }
   q(box,"#f_scanbtn").onclick=run;
+  /* v3.12：摄像头扫码——识别结果回填输入框后走原有查询管线 */
+  q(box,"#f_cam").onclick=()=>window.XLBCamScan&&XLBCamScan.open({
+    title:"扫码出入库",onScan:t=>{inp.value=t;run();}});
   inp.addEventListener("keydown",e=>{if(e.key==="Enter")run()});
   setTimeout(()=>inp.focus(),60);
 
@@ -587,6 +612,8 @@ function pageManual(box){
         点「出库」把在库瓶整瓶出库。</div>
       <div class="searchbar" style="margin-top:10px">
         <input id="f_mbid" placeholder="手动输入瓶号 / 粘贴瓶码" autocomplete="off">
+        <button class="btn secondary cam-btn" id="f_mbcam" title="摄像头扫码" aria-label="摄像头扫码">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg></button>
         <button class="btn" id="f_mbq">查询</button></div>
       <div id="f_mbres"></div>
       <div class="actions">
@@ -619,6 +646,9 @@ function pageManual(box){
     }catch(e){toast(e.message);cur=null;return null}
   }
   q(box,"#f_mbq").onclick=lookup;
+  /* v3.12：摄像头扫码——识别结果回填瓶号后走原有查询管线 */
+  q(box,"#f_mbcam").onclick=()=>window.XLBCamScan&&XLBCamScan.open({
+    title:"手动出入库",onScan:t=>{inp.value=t;lookup();}});
   inp.addEventListener("keydown",e=>{if(e.key==="Enter")lookup()});
   setTimeout(()=>inp.focus(),60);
 
@@ -1158,6 +1188,8 @@ function pageStocktake(box){
       <div class="hint" id="t_stat">尚未开始</div>
       <div class="searchbar">
         <input id="t_scan" placeholder="扫描在库瓶码" autocomplete="off">
+        <button class="btn secondary cam-btn" id="t_cam" title="摄像头连续扫码" aria-label="摄像头连续扫码">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg></button>
         <button class="btn secondary" id="t_btn">记入</button></div>
       <div id="t_result"></div></div>`;
   q(box,"#t_start").onclick=async()=>{
@@ -1184,6 +1216,10 @@ function pageStocktake(box){
     q(box,"#t_scan").focus();
   };
   q(box,"#t_btn").onclick=addScan;
+  /* v3.12：摄像头连续扫码（盘点）——逐码回填并走原有记入管线 */
+  q(box,"#t_cam").onclick=()=>window.XLBCamScan&&XLBCamScan.open({
+    title:"扫码盘点（连续）",continuous:true,
+    onScan:t=>{q(box,"#t_scan").value=t;addScan();}});
   q(box,"#t_scan").addEventListener("keydown",e=>{if(e.key==="Enter")addScan()});
   q(box,"#t_rep").onclick=async()=>{
     if(!scope.length){toast("请先开始盘点");return}

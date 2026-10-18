@@ -3,13 +3,14 @@
 // ② API 读取(GET)：NetworkFirst（在线取最新→压缩→加密写缓存，离线/超时回退并解密→解压）
 // ③ 本地缓存：JSON/文本类先 gzip 压缩再 AES-GCM 256 加密；图片等已压缩格式只加密
 // ④ 原生 App 内按用户配置的服务器地址，把 /api 请求重写到真实服务端
-const SHELL_CACHE = "xlb-shell-v24";   // v3.11：标签码制自动改二维码/瓶号规则变更（刷新壳缓存）
+const SHELL_CACHE = "xlb-shell-v25";   // v3.12：新增摄像头扫码（camera_scan.js + zxing 解码库，刷新壳缓存）
 const DATA_CACHE = "xlb-data-v6";
 const ALL_CACHES = [SHELL_CACHE, DATA_CACHE];
 const ASSETS = [
   "./", "./index.html", "./manifest.json", "./icon-192.png", "./icon-512.png",
   "./store.js", "./db.js", "./label.js", "./dingtalk.js",
-  "./api_local.js", "./bluetooth_print.js"
+  "./api_local.js", "./bluetooth_print.js",
+  "./camera_scan.js", "./zxing.umd.min.js"
 ];
 
 // 页面通过 IndexedDB(kv, key=server_base) 共享地址；null 表示尚未读取
