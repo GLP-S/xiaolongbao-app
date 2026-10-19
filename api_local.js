@@ -8,7 +8,7 @@
   "use strict";
 
   const APP_NAME = "小笼包";
-  const APP_VERSION = "3.13";
+  const APP_VERSION = "3.16";
 
   let store = null;
   let _initPromise = null;
@@ -466,7 +466,16 @@
     // 1) push：全量 items/products + 全量 logs（服务端按 log_id 去重）
     if (api.isDirty()) {
       const pushBody = { items: store.items, logs: store.logs, products: store.products };
-      if (_session && _session.role === "admin") pushBody.boxes = store.boxes();
+      if (_session && _session.role === "admin") {
+        pushBody.boxes = store.boxes();
+        // v3.16：钉钉机器人配置随同步上传（本机已配置时才推送），实现“一端配置、全端生效”
+        const wh = String(store.config.dingtalk_webhook || "").trim();
+        if (wh) pushBody.dingtalk = {
+          webhook: wh,
+          secret: String(store.config.dingtalk_secret || ""),
+          auto: String(store.config.dingtalk_auto || "0"),
+        };
+      }
       const pr = await fetch(base + "/api/sync/push", { method: "POST", headers: H, body: JSON.stringify(pushBody) });
       if (!pr.ok) throw new Error("推送失败: " + pr.status);
     }
@@ -481,6 +490,14 @@
     for (const l of (data.logs || [])) if (!seen.has(l.log_id)) { store.logs.push(l); seen.add(l.log_id); }
     if (Array.isArray(data.boxes) && data.boxes.length && _session && _session.role === "admin") {
       store.config.boxes = JSON.stringify(data.boxes);
+    }
+    // v3.16：服务端已落盘钉钉配置时下发到本机（本机为空才回填，避免覆盖本机刚保存的配置）
+    const rcfg = data.config || {};
+    const rwh = String(rcfg.dingtalk_webhook || "").trim();
+    if (rwh && !String(store.config.dingtalk_webhook || "").trim()) {
+      store.config.dingtalk_webhook = rwh;
+      store.config.dingtalk_secret = String(rcfg.dingtalk_secret || "");
+      store.config.dingtalk_auto = String(rcfg.dingtalk_auto || "0");
     }
     store.config.sync_last_ts = String(data.ts || Date.now() / 1000);
     await store.save();

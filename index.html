@@ -209,7 +209,7 @@ textarea{resize:vertical;min-height:60px}
 <script>
 "use strict";
 /* ================= 常量 ================= */
-const APP_VERSION="3.13";
+const APP_VERSION="3.16";
 const ICONS={
   inout:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.3 7 12 12l8.7-5"/><path d="M12 22V12"/></svg>',
   query:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>',
@@ -1269,7 +1269,9 @@ function pageSettings(box){
         <div class="actions">
           <button class="btn secondary" id="s_dttest">测试机器人</button>
           <button class="btn secondary" id="s_dtpush">推送库存摘要</button></div>
-        <div class="hint">先保存设置；测试机器人可直接校验当前输入。三端联网直推钉钉群，无需经过同步服务器。</div></div>
+        <div class="hint">测试机器人会自动保存上方的 Webhook/密钥并勾选自动推送（无需先点保存）；
+          保存后联网会自动同步到电脑端与其他平板，实现一端配置、全端生效。
+          当前状态：${(cfg.dingtalk_webhook||"").trim() && String(cfg.dingtalk_auto||"0")==="1" ? "已启用自动推送" : "未启用（业务操作不会推送）"}。</div></div>
 
       <div class="panel"><h3>常用参数</h3>
         <div class="grid2">
@@ -1348,16 +1350,23 @@ function pageSettings(box){
       await load();
       toast("参数已刷新");
     };
-    /* v3.7：测试机器人统一走 /api/dingtalk_test（远程服务端 HMAC 加签发送；
-       本地模式 api_local 内部用 XLBDingTalk 直推），可校验未保存的临时 webhook/secret */
+    /* v3.16：测试机器人 = 先落盘并启用自动推送（避免“测试成功但业务操作不推送”），再发测试消息。
+       保存会触发联网自动同步，把钉钉配置推送到服务器，实现一端配置、全端生效 */
     q(box,"#s_dttest").onclick=async()=>{
       const webhook=q(box,"#s_dtw").value.trim();
       if(!webhook){toast("请先填写机器人 Webhook");return}
-      toast("正在发送…");
+      q(box,"#s_dtauto").checked=true;
+      try{
+        await apiWrite("/api/config",{
+          dingtalk_auto:"1",
+          dingtalk_webhook:webhook,
+          dingtalk_secret:q(box,"#s_dts").value.trim()});
+      }catch(e){toast("保存失败："+e.message);return}
+      toast("已保存并启用自动推送，正在发送…");
       try{
         const j=await api("/api/dingtalk_test",{method:"POST",
           body:JSON.stringify({webhook,secret:q(box,"#s_dts").value.trim()})});
-        toast((j.msg||"发送成功")+"：请查看钉钉群");
+        toast((j.msg||"发送成功")+"：已启用自动推送，请查看钉钉群");
       }catch(e){toast(e.message)}
     };
     q(box,"#s_dtpush").onclick=async()=>{
