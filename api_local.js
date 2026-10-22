@@ -8,7 +8,7 @@
   "use strict";
 
   const APP_NAME = "小笼包";
-  const APP_VERSION = "3.18";
+  const APP_VERSION = "3.19";
 
   let store = null;
   let _initPromise = null;

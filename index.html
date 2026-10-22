@@ -115,8 +115,11 @@ textarea{resize:vertical;min-height:60px}
 .tbl-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:12px;background:var(--panel)}
 .tbl{width:100%;border-collapse:collapse;font-size:13px}
 .tbl th{text-align:left;padding:9px 8px;color:var(--muted);font-weight:600;
-  border-bottom:1px solid var(--line);white-space:nowrap;background:var(--panel)}
-.tbl td{padding:9px 8px;border-bottom:1px solid var(--line2);white-space:nowrap}
+  border-bottom:1px solid var(--line);border-right:1px solid var(--line);
+  white-space:nowrap;background:var(--panel)}
+.tbl td{padding:9px 8px;border-bottom:1px solid var(--line2);
+  border-right:1px solid var(--line2);white-space:nowrap}
+.tbl th:last-child,.tbl td:last-child{border-right:0}
 .tbl tr.rw{cursor:pointer}
 .tbl tr.rw:active td{background:var(--panel2)}
 .mini{padding:4px 9px;font-size:12px;border-radius:8px;box-shadow:0 2px 0 var(--green-dd)}
@@ -209,7 +212,7 @@ textarea{resize:vertical;min-height:60px}
 <script>
 "use strict";
 /* ================= 常量 ================= */
-const APP_VERSION="3.18";
+const APP_VERSION="3.19";
 const ICONS={
   inout:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.3 7 12 12l8.7-5"/><path d="M12 22V12"/></svg>',
   query:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>',
@@ -1605,6 +1608,17 @@ window.addEventListener("DOMContentLoaded",async()=>{
   /* 启动 3 秒后尝试一次后台同步 */
   setTimeout(()=>{if(window.XLBLocalApi&&XLBLocalApi.isDirty())doSync(false)},3000);
 });
+/* v3.19：表格横向滚轮（Shift+滚轮 / 触控板横向滑动） */
+document.addEventListener("wheel",e=>{
+  const wrap=e.target&&e.target.closest?e.target.closest(".tbl-wrap"):null;
+  if(!wrap||wrap.scrollWidth<=wrap.clientWidth+1)return;
+  if(!(e.shiftKey||Math.abs(e.deltaX)>Math.abs(e.deltaY)))return;
+  const d=e.deltaX||e.deltaY;
+  if(!d)return;
+  wrap.scrollLeft+=d;
+  e.preventDefault();
+},{passive:false});
+
 if("serviceWorker" in navigator){
   navigator.serviceWorker.register("sw.js").catch(()=>{});
 }

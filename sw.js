@@ -3,7 +3,7 @@
 // ② API 读取(GET)：NetworkFirst（在线取最新→压缩→加密写缓存，离线/超时回退并解密→解压）
 // ③ 本地缓存：JSON/文本类先 gzip 压缩再 AES-GCM 256 加密；图片等已压缩格式只加密
 // ④ 原生 App 内按用户配置的服务器地址，把 /api 请求重写到真实服务端
-const SHELL_CACHE = "xlb-shell-v32";   // v3.18：标签自适应与库存失效日期修复后升缓存，避免下发旧 label.js/index.html
+const SHELL_CACHE = "xlb-shell-v33";   // v3.19：表格竖线/横向滚轮改动后升缓存，避免下发旧 index.html
 const DATA_CACHE = "xlb-data-v6";
 const ALL_CACHES = [SHELL_CACHE, DATA_CACHE];
 const ASSETS = [
