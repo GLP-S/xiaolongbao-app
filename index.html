@@ -248,6 +248,17 @@ function toast(msg){const t=el("div","toast");t.textContent=msg;document.body.ap
   setTimeout(()=>t.remove(),1900)}
 function tagCls(s){return s==="在库"?"tag-in":s==="已出库"?"tag-out":
   s==="已取用"?"tag-used":"tag-discard"}
+/* 失效日期：优先用入库时自动生成的字段；旧数据缺失时按“有效期至-1天”兜底 */
+function expireOf(it){
+  if(!it)return "";
+  if(it.expire_date)return String(it.expire_date).slice(0,10);
+  const v=String(it.exp_date||"").slice(0,10);
+  const d=v?new Date(v+"T00:00:00"):null;
+  if(!d||isNaN(d))return "";
+  d.setDate(d.getDate()-1);
+  const p=n=>String(n).padStart(2,"0");
+  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`;
+}
 /* v3.7：扫码枪输入兼容（NFKC/去 AIM 前缀/去空白控制符/大写）；实现以 store.js 为准 */
 function normalizeScanCode(s){
   if(window.XLBNormalizeScanCode)return window.XLBNormalizeScanCode(s);
@@ -979,7 +990,7 @@ function pageStock(box){
     }
     const tb=el("table","tbl",`<thead><tr>
       <th>瓶号</th><th>名称</th><th>浓度</th><th>批号</th>
-      <th>库位</th><th>状态</th><th>有效期</th><th>操作</th>
+      <th>库位</th><th>状态</th><th>失效日期</th><th>操作</th>
       </tr></thead><tbody></tbody>`);
     const tbod=q(tb,"tbody");
     items.forEach(it=>{
@@ -989,7 +1000,7 @@ function pageStock(box){
         <td>${esc(it.batch||"")}</td>
         <td>${esc(it.location||"")}</td>
         <td><span class="tag ${tagCls(it.status)}">${esc(it.status)}</span></td>
-        <td>${esc(it.exp_date||"")}</td>
+        <td>${esc(expireOf(it))}</td>
         <td><button class="btn mini secondary" data-op="reprint">补打</button>
           <button class="btn mini secondary" data-op="sheet">管理表</button>
           <button class="btn mini danger" data-op="discard">作废</button></td>`);
@@ -1076,7 +1087,7 @@ function openItemModal(it){
       <span class="k">批号</span><span class="v">${esc(it.batch)}</span>
       <span class="k">库位</span><span class="v">${esc(it.location||"—")}</span>
       <span class="k">生产日期</span><span class="v">${esc(it.prod_date)}</span>
-      <span class="k">有效期至</span><span class="v">${esc(it.exp_date)}</span>
+      <span class="k">失效日期</span><span class="v">${esc(expireOf(it))}</span>
       <span class="k">开封信息</span><span class="v">${it.open_date?esc(it.open_date)+" → "+esc(it.open_exp_date):"未开封"}</span>
       <span class="k">规格</span><span class="v">${it.init_amount!=null?esc(it.init_amount)+" "+esc(it.unit):"—"}</span>
       <span class="k">经办人</span><span class="v">${esc(it.operator)}</span>

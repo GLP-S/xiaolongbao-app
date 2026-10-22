@@ -93,12 +93,13 @@
     return m;
   }
 
-  function fitText(ctx, text, maxW, startSize, bold, minSize) {
+  function fitText(ctx, text, maxW, startSize, bold, minSize, family) {
+    family = family || "sans-serif";
     let size = startSize;
-    ctx.font = `${bold ? "bold " : ""}${size}px sans-serif`;
+    ctx.font = `${bold ? "bold " : ""}${size}px ${family}`;
     while (size > minSize && ctx.measureText(text).width > maxW) {
       size -= 0.5;
-      ctx.font = `${bold ? "bold " : ""}${size}px sans-serif`;
+      ctx.font = `${bold ? "bold " : ""}${size}px ${family}`;
     }
     return size;
   }
@@ -127,18 +128,40 @@
     return lines;
   }
 
-  // v3.9：缩小字号直到换行后的文本块高度 <= maxH；到 minSize 仍放不下也全部换行
-  // （绝不省略号截断或溢出裁切）。返回 {size, lines, height}。
-  function fitWrapped(ctx, text, maxW, maxH, startSize, bold, minSize, family) {
+  // v3.18：按可用高度自适应缩字/换行（与桌面端 _fit_wrapped_ex 对齐）。
+  // 到 minSize 仍放不下时：truncate=true → 从末尾逐字删减并在末行加“…”直到高度<=maxH，
+  // 保证绝不越界裁切；truncate=false → 返回最小字号的完整换行结果（瓶号等不可截断内容兜底）。
+  // 返回 {size, lines, height, truncated}。
+  function fitWrappedEx(ctx, text, maxW, maxH, startSize, bold, minSize, family, truncate) {
     family = family || "sans-serif";
+    const t = String(text == null ? "" : text);
     let size = startSize;
-    for (;;) {
+    ctx.font = `${bold ? "bold " : ""}${size}px ${family}`;
+    let lines = wrapText(ctx, t, maxW);
+    let h = lines.length * (size + 1);
+    while (size > minSize && h > maxH) {
+      size = Math.max(minSize, size - 0.5);
       ctx.font = `${bold ? "bold " : ""}${size}px ${family}`;
-      const lines = wrapText(ctx, text, maxW);
-      const h = lines.length * (size + 1);
-      if (h <= maxH || size <= minSize) return { size, lines, height: h };
-      size -= 0.5;
+      lines = wrapText(ctx, t, maxW);
+      h = lines.length * (size + 1);
     }
+    if (h <= maxH) return { size, lines, height: h, truncated: false };
+    if (!truncate) return { size, lines, height: h, truncated: true };
+    let s = t;
+    while (s.length) {
+      s = s.slice(0, -1);
+      const ls = wrapText(ctx, s + "…", maxW);
+      const hh = ls.length * (size + 1);
+      if (hh <= maxH) return { size, lines: ls, height: hh, truncated: true };
+    }
+    const ls = wrapText(ctx, "…", maxW);
+    const sl = ls.length ? ls : ["…"];
+    return { size, lines: sl, height: sl.length * (size + 1), truncated: true };
+  }
+
+  // 兼容旧调用：默认允许末行省略兜底，保证文本块高度不超过 maxH。
+  function fitWrapped(ctx, text, maxW, maxH, startSize, bold, minSize, family) {
+    return fitWrappedEx(ctx, text, maxW, maxH, startSize, bold, minSize, family, true);
   }
 
   // ==========================================================================
@@ -662,36 +685,51 @@
       return { top: o0.top, height: bottom - o0.top };
     }
 
-    // 2) 右侧文字：名称（上）+ 瓶号（下），按列宽自动换行并缩字，不再省略号/溢出截断
+    // 2) 右侧文字：先排瓶号（优先压到 1 行，瓶号不可截断），再把准确剩余高度全部给名称
+    //    v3.18：名称/瓶号下限降到 1.0mm，按实际可用高度连续缩字+换行，绝不越界裁切
     ctx.textBaseline = "top";
-    const fNameMin = Math.max(7, Math.round(1.4 * u));
-    const fCodeMin = Math.max(7, Math.round(1.3 * u));
-    const minLine = fCodeMin + 1;
+    const fNameMin = Math.max(7, Math.round(1.0 * u));
+    const fCodeMin = Math.max(7, Math.round(1.0 * u));
+    const minLine = fNameMin + 1;
     const sideMax = Math.max(8, Math.min(availH, W - 2 * mx));   // 并排版式下二维码边长上限
     const tx = mx + sideMax + gap;
     const tw = W - mx - tx;
     if (tw >= Math.max(10, Math.round(2.5 * u))) {
-      // 先按 55% 预算排名称，再给瓶号分配剩余高度；两块按“墨迹对墨迹”固定 1.5mm 间距，整体居中
-      const nf = fitWrapped(ctx, name, tw, Math.max(minLine, Math.round((availH - gapV) * 0.55)),
-                            Math.max(8, Math.round(2.4 * u)), true, fNameMin, "sans-serif");
-      const cf = fitWrapped(ctx, code, tw, Math.max(minLine, availH - gapV - nf.height),
-                            Math.max(8, Math.round(2.2 * u)), true, fCodeMin, "monospace");
+      // 瓶号：先用最大字号试单行；放不下再在扣除“名称最小一行+间距”的余量内换行
+      let cf;
+      const oneSize = fitText(ctx, code, tw, Math.max(8, Math.round(2.2 * u)), true, fCodeMin, "monospace");
+      ctx.font = `bold ${oneSize}px monospace`;
+      if (ctx.measureText(code).width <= tw) {
+        cf = { size: oneSize, lines: [code], height: oneSize + 1, truncated: false };
+      } else {
+        cf = fitWrappedEx(ctx, code, tw, Math.max(minLine, availH - gapV - minLine),
+                          Math.max(8, Math.round(2.2 * u)), true, fCodeMin, "monospace", false);
+      }
+      let gapVEff = gapV;
+      let nameMaxH = availH - gapVEff - cf.height;
+      if (nameMaxH < fNameMin + 1) {
+        // 极端矮标签：压缩名称/瓶号间距，仍优先保证内容在标签内
+        gapVEff = Math.max(1, gapVEff - (fNameMin + 1 - nameMaxH));
+        nameMaxH = availH - gapVEff - cf.height;
+      }
+      const nf = fitWrappedEx(ctx, name, tw, Math.max(1, nameMaxH), Math.max(8, Math.round(2.4 * u)),
+                              true, fNameMin, "sans-serif", true);
       drawQR(mx, mt, sideMax);
       ctx.font = `bold ${nf.size}px sans-serif`;
       const nb = inkBlock(nf.lines, nf.size);
       ctx.font = `bold ${cf.size}px monospace`;
       const cb = inkBlock(cf.lines, cf.size);
-      // 按墨迹整体居中；两块墨迹总高略超内高时上下均分溢出（不把溢出全压到标签底边）
-      const yInk = mt + Math.floor((availH - nb.height - gapV - cb.height) / 2);
+      // 按墨迹整体居中；起点绝不为负，名称/瓶号完整落在内框内
+      const yInk = mt + Math.max(0, Math.floor((availH - nb.height - gapVEff - cb.height) / 2));
       ctx.font = `bold ${nf.size}px sans-serif`;
       let y = yInk - nb.top;
       for (const ln of nf.lines) { ctx.fillText(ln, tx, y); y += nf.size + 1; }
       ctx.font = `bold ${cf.size}px monospace`;
-      y = yInk + nb.height + gapV - cb.top;      // 瓶号墨迹顶 = 名称墨迹底 + 1.5mm
+      y = yInk + nb.height + gapVEff - cb.top;   // 瓶号墨迹顶 = 名称墨迹底 + 间距
       for (const ln of cf.lines) { ctx.fillText(ln, tx, y); y += cf.size + 1; }
     } else {
-      const cf = fitWrapped(ctx, code, W - 2 * mx, Math.max(minLine, Math.round(availH * 0.45)),
-                            Math.max(8, Math.round(2.2 * u)), true, fCodeMin, "monospace");
+      const cf = fitWrappedEx(ctx, code, W - 2 * mx, Math.max(minLine, availH - gapV - 8),
+                              Math.max(8, Math.round(2.2 * u)), true, fCodeMin, "monospace", false);
       const side = Math.max(8, Math.min(W - 2 * mx, availH - gapV - cf.height));
       drawQR(mx, mt, side);
       ctx.font = `bold ${cf.size}px monospace`;
@@ -724,33 +762,56 @@
     ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, W, H);
     ctx.fillStyle = "#000";
 
-    const mx = Math.max(2, Math.round(0.9 * u));
-    const mt = Math.max(2, Math.round(0.7 * u));
-    const mb = Math.max(1, Math.round(0.4 * u));
+    // v3.18：与桌面端 _label_layout 对齐——条码带优先 ≥50% 标签高，
+    // 排不下先缩名称、再缩代码文字；名称字号到 1.0mm 下限仍放不下才末行省略
+    const mx = Math.max(2, Math.round(0.6 * u));
+    const mt = Math.max(2, Math.round(0.6 * u));
+    const mb = Math.max(1, Math.round(0.6 * u));
     const innerW = W - 2 * mx;
+    const gap = Math.max(1, Math.round(0.3 * u));
 
-    // 1) 名称
-    const name = String(item.name || "");
-    const nameSize = fitText(ctx, name, innerW, Math.max(9, Math.round(3.4 * u)), true, Math.max(8, Math.round(1.7 * u)));
-    ctx.font = `bold ${nameSize}px sans-serif`;
+    let barPlan = Math.floor(H * 0.5);
+    const nameMinPlan = Math.max(8, Math.round(2.6 * u));
+    const codeMinPlan = Math.max(7, Math.round(2.2 * u));
+    let nameSize = Math.max(nameMinPlan, Math.round(3.4 * u));
+    let codeSize = Math.max(codeMinPlan, Math.round(2.7 * u));
+    while (mt + mb + 2 * gap + nameSize + codeSize + barPlan > H) {
+      if (nameSize > nameMinPlan) nameSize -= 1;
+      else if (codeSize > codeMinPlan) codeSize -= 1;
+      else if (barPlan > 3) barPlan -= 1;
+      else break;
+    }
+    barPlan = Math.max(3, barPlan);
+
     ctx.textBaseline = "top";
-    const nw = ctx.measureText(name).width;
-    ctx.fillText(name, (W - nw) / 2, mt);
-    const nameBottom = mt + nameSize;
 
-    // 2) 代码文字
+    // 1) 代码文字（条码下方，单行加粗）：先排底部，给名称留出准确剩余高度
     const code = String(item.bottle_id || "");
-    const codeSize = fitText(ctx, code, innerW, Math.max(8, Math.round(2.7 * u)), true, Math.max(7, Math.round(1.5 * u)));
-    ctx.font = `bold ${codeSize}px monospace`;
+    const codeSizeFit = fitText(ctx, code, innerW, codeSize, true, codeMinPlan, "monospace");
+    ctx.font = `bold ${codeSizeFit}px monospace`;
     const cw = ctx.measureText(code).width;
-    const codeY = H - mb - codeSize;
+    const codeY = H - mb - codeSizeFit;
     ctx.fillText(code, (W - cw) / 2, codeY);
 
-    // 3) 条码：占名称与代码文字之间全部剩余高度，且不低于标签高度的 50%
-    const gap = Math.max(1, Math.round(0.4 * u));
-    let barH = Math.max(3, codeY - gap - (nameBottom + gap));
-    barH = Math.max(barH, Math.round(0.5 * H));
-    drawBarcode(ctx, code, W / 2, nameBottom + gap, innerW, W, barH, u);
+    // 2) 溶液名称：在条码带上方剩余高度内自适应缩字+换行；到 1.0mm 下限仍放不下才末行省略
+    const name = String(item.name || "");
+    const nameMinHard = Math.max(7, Math.round(1.0 * u));
+    const nameMaxH = Math.max(codeSizeFit + 1, codeY - gap - barPlan - gap - mt);
+    const nf = fitWrappedEx(ctx, name, innerW, nameMaxH, nameSize, true, nameMinHard, "sans-serif", true);
+    ctx.font = `bold ${nf.size}px sans-serif`;
+    let ny = mt;
+    for (const ln of nf.lines) {
+      const nw = ctx.measureText(ln).width;
+      ctx.fillText(ln, (W - nw) / 2, ny);
+      ny += nf.size + 1;
+    }
+    const nameBottom = mt + nf.height;
+
+    // 3) 条码带：占据名称与代码文字之间全部剩余高度（不小于规划的 50%），绝不与文字重叠
+    const bandTop = nameBottom + gap;
+    const bandBot = codeY - gap;
+    const barH = Math.max(3, bandBot - bandTop);
+    drawBarcode(ctx, code, W / 2, bandTop, innerW, W, barH, u);
 
     return canvas.toDataURL("image/png");
   }
